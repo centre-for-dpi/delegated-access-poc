@@ -1,0 +1,11 @@
+{
+  "type": [
+    "VerifiableCredential",
+    "RevocationList2020"
+  ],
+  "credentialSubject": {
+    "id": "urn:uuid:cca8bd0a-83c2-4ae1-9f43-e99943cdfa5c",
+    "type": "RevocationList2020",
+    "encodedList": "H4sIAAAAAAAA/zMwNABDAKb12i0IAAAA"
+  }
+}

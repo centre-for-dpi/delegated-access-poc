@@ -1,0 +1,74 @@
+@file:OptIn(ExperimentalUuidApi::class, ExperimentalTime::class)
+
+package id.walt.webwallet.service.events
+
+import id.walt.webwallet.db.models.Events
+import kotlinx.serialization.Contextual
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.encodeToJsonElement
+import kotlinx.serialization.json.jsonObject
+import org.jetbrains.exposed.v1.core.ResultRow
+import kotlin.time.Clock
+import kotlin.time.ExperimentalTime
+import kotlin.time.Instant
+import kotlin.time.toKotlinInstant
+import kotlin.uuid.ExperimentalUuidApi
+import kotlin.uuid.Uuid
+
+const val EventDataNotAvailable = "n/a"
+
+@Serializable
+data class Event(
+    val id: Int? = null,
+    val event: String,
+    val action: String,
+    val timestamp: Instant = Clock.System.now(),
+    val tenant: String,
+    val originator: String? = null,
+    @Contextual
+    val account: Uuid,
+    @Contextual
+    val wallet: Uuid? = null,
+    val credentialId: String? = null,
+    val data: JsonObject,
+    val note: String? = null,
+) {
+    constructor(
+        id: Int? = null,
+        action: EventType.Action,
+        tenant: String,
+        originator: String?,
+        account: Uuid,
+        wallet: Uuid?,
+        data: EventData,
+        credentialId: String? = null,
+        note: String? = null,
+    ) : this(
+        id = id,
+        event = action.type,
+        action = action.toString(),
+        tenant = tenant,
+        originator = originator,
+        account = account,
+        wallet = wallet,
+        data = Json.encodeToJsonElement(data).jsonObject,
+        credentialId = credentialId,
+        note = note,
+    )
+
+    constructor(row: ResultRow) : this(
+        id = row[Events.id].value,
+        event = row[Events.event],
+        action = row[Events.action],
+        timestamp = row[Events.timestamp].toKotlinInstant(),
+        tenant = row[Events.tenant],
+        originator = row[Events.originator],
+        account = row[Events.account],
+        wallet = row[Events.wallet],
+        data = Json.parseToJsonElement(row[Events.data]).jsonObject,
+        credentialId = row[Events.credentialId],
+        note = row[Events.note]
+    )
+}

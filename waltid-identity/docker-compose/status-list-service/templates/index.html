@@ -1,0 +1,434 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Credential Status Manager - walt.id</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <script>
+        tailwind.config = {
+            theme: {
+                colors: {
+                    primary: {
+                        50: '#E6F6FF', 100: '#BAE3FF', 200: '#7CC4FA',
+                        300: '#47A3F3', 400: '#0573F0', 500: '#0A63C9',
+                        600: '#0552B5', 700: '#03449E', 800: '#01337D',
+                        900: '#002159',
+                    },
+                    gray: {
+                        50: '#F5F7FA', 100: '#E4E7EB', 200: '#CBD2D9',
+                        300: '#9AA5B1', 400: '#7B8794', 500: '#616E7C',
+                        600: '#52606D', 700: '#3E4C59', 800: '#323F4B',
+                        900: '#1F2933',
+                    },
+                    green: {
+                        50: '#E1FCF8', 100: '#C1FEF6', 200: '#92FDF2',
+                        300: '#62F4EB', 400: '#3AE7E1', 500: '#1CD4D4',
+                        600: '#0FB5BA', 700: '#099AA4', 800: '#07818F',
+                        900: '#05606E',
+                    },
+                    red: {
+                        50: '#FFE3E3', 100: '#FFBDBD', 200: '#FF9B9B',
+                        300: '#F86A6A', 400: '#EF4E4E', 500: '#E12D39',
+                        600: '#CF1124', 700: '#AB091E', 800: '#8A041A',
+                        900: '#610316',
+                    },
+                    yellow: {
+                        50: '#FFFBEA', 100: '#FFF3C4', 200: '#FCE588',
+                        300: '#FADB5F', 400: '#F7C948', 500: '#F0B429',
+                        600: '#DE911D', 700: '#CB6E17', 800: '#B44D12',
+                        900: '#8D2B0B',
+                    },
+                    white: '#ffffff',
+                    black: '#000000',
+                    transparent: 'transparent',
+                },
+                extend: {
+                    fontFamily: {
+                        sans: ['Inter', 'system-ui', '-apple-system', 'sans-serif'],
+                    },
+                },
+            },
+        }
+    </script>
+</head>
+<body class="min-h-screen bg-gray-50 font-sans">
+    <div class="flex flex-col items-center min-h-screen py-8">
+        <!-- walt.id icon -->
+        <div class="my-5 flex flex-row justify-center">
+            <svg width="35" height="35" viewBox="0 0 141 141" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <circle cx="70.5" cy="70.5" r="70.5" fill="#0573F0"/>
+                <rect x="39" y="46" width="30" height="9" fill="#E6F6FF"/>
+                <path d="M113 75L105 74C100 103 68 103 68 103L67 112C100 113 111 87 113 75Z" fill="#E6F6FF"/>
+            </svg>
+        </div>
+
+        <!-- Main card -->
+        <div class="w-10/12 sm:w-8/12 lg:w-6/12 shadow-2xl rounded-lg pt-8 pb-8 px-10 bg-white">
+
+            <!-- Login view -->
+            <div id="login-view">
+                <h1 class="text-xl sm:text-2xl font-bold text-gray-900 text-center">
+                    Credential Status Manager
+                </h1>
+                <p class="mt-2 text-gray-400 text-sm text-center">
+                    Sign in to view and manage credential revocation status
+                </p>
+
+                <hr class="mt-6 mb-6 border-gray-100">
+
+                <div class="max-w-xs mx-auto">
+                    <div class="mb-4">
+                        <label for="email" class="block text-xs font-medium text-gray-500 mb-1">Email</label>
+                        <input type="email" id="email" placeholder="you@example.com"
+                               class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-900
+                                      focus:outline-none focus:ring-2 focus:ring-primary-200 focus:border-primary-400">
+                    </div>
+                    <div class="mb-6">
+                        <label for="password" class="block text-xs font-medium text-gray-500 mb-1">Password</label>
+                        <input type="password" id="password" placeholder="••••••••"
+                               class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-900
+                                      focus:outline-none focus:ring-2 focus:ring-primary-200 focus:border-primary-400">
+                    </div>
+                    <div id="login-error" class="hidden mb-4 bg-red-50 border border-red-100 rounded-lg p-3 text-xs text-red-600"></div>
+                    <button onclick="doLogin()"
+                            class="w-full inline-flex items-center justify-center text-sm font-medium rounded-full
+                                   bg-primary-400 hover:bg-primary-500 text-white
+                                   px-6 py-2.5 focus:outline-none shadow-sm">
+                        <span id="login-text">Sign In</span>
+                        <svg id="login-spinner" class="hidden animate-spin ml-2 h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+                        </svg>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Credentials view (hidden until login) -->
+            <div id="credentials-view" class="hidden">
+                <div class="flex items-center justify-between mb-2">
+                    <h1 class="text-xl sm:text-2xl font-bold text-gray-900">
+                        Credential Status Manager
+                    </h1>
+                    <button onclick="doLogout()" class="text-xs text-gray-300 hover:text-gray-500">Sign out</button>
+                </div>
+                <p class="text-gray-400 text-sm" id="wallet-user"></p>
+
+                <hr class="mt-4 mb-5 border-gray-100">
+
+                <p class="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Wallet Credentials</p>
+                <div id="credentials-container">
+                    <div class="flex items-center justify-center py-8">
+                        <svg class="animate-spin h-5 w-5 text-gray-200 mr-2" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+                        </svg>
+                        <span class="text-sm text-gray-300">Loading credentials...</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Toast -->
+            <div id="toast" class="hidden fixed top-6 right-6 max-w-sm rounded-lg shadow-lg border px-5 py-4 text-sm z-50"></div>
+
+            <!-- Confirmation modal -->
+            <div id="modal-overlay" class="hidden fixed inset-0 bg-black bg-opacity-30 z-40 flex items-center justify-center">
+                <div class="bg-white rounded-lg shadow-2xl p-8 max-w-md mx-4 text-center">
+                    <div id="modal-icon" class="flex justify-center mb-4"></div>
+                    <h3 id="modal-title" class="text-lg font-bold text-gray-900 mb-2"></h3>
+                    <p id="modal-message" class="text-sm text-gray-500 mb-6"></p>
+                    <div class="flex gap-3 justify-center">
+                        <button onclick="closeModal()"
+                                class="px-6 py-2 text-sm font-medium rounded-full bg-gray-100 hover:bg-gray-200 text-gray-600">
+                            Cancel
+                        </button>
+                        <button id="modal-confirm" class="px-6 py-2 text-sm font-medium rounded-full text-white"></button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Footer -->
+            <div class="flex flex-col items-center mt-10">
+                <div class="flex flex-row gap-2 items-center text-sm text-gray-300">
+                    <p>Secured by walt.id</p>
+                    <svg width="15" height="15" viewBox="0 0 141 141" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <circle cx="70.5" cy="70.5" r="70.5" fill="#CBD2D9"/>
+                        <rect x="39" y="46" width="30" height="9" fill="#52606D"/>
+                        <path d="M113 75L105 74C100 103 68 103 68 103L67 112C100 113 111 87 113 75Z" fill="#52606D"/>
+                    </svg>
+                </div>
+            </div>
+        </div>
+    </div>
+
+<script>
+const BASE = window.location.origin;
+let authToken = null;
+let userEmail = null;
+
+const CREDENTIAL_LABELS = {
+    'BirthCertificate': 'Birth Certificate',
+    'ParentalDelegationCredential': 'Parental Delegation Credential',
+};
+function friendlyType(raw) { return CREDENTIAL_LABELS[raw] || raw || 'Unknown Credential'; }
+
+// --- Login ---
+
+async function doLogin() {
+    const email = document.getElementById('email').value;
+    const password = document.getElementById('password').value;
+    const errorEl = document.getElementById('login-error');
+    errorEl.classList.add('hidden');
+
+    document.getElementById('login-spinner').classList.remove('hidden');
+    document.getElementById('login-text').textContent = 'Signing in...';
+
+    try {
+        const resp = await fetch(`${BASE}/api/wallet/login`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ type: 'email', email, password })
+        });
+        const data = await resp.json();
+
+        if (!resp.ok || !data.token) {
+            throw new Error(data.message || 'Invalid credentials');
+        }
+
+        authToken = 'Bearer ' + data.token;
+        userEmail = email;
+        document.getElementById('login-view').classList.add('hidden');
+        document.getElementById('credentials-view').classList.remove('hidden');
+        document.getElementById('wallet-user').textContent = email;
+        loadCredentials();
+    } catch (e) {
+        errorEl.textContent = e.message;
+        errorEl.classList.remove('hidden');
+    } finally {
+        document.getElementById('login-spinner').classList.add('hidden');
+        document.getElementById('login-text').textContent = 'Sign In';
+    }
+}
+
+function doLogout() {
+    authToken = null;
+    userEmail = null;
+    document.getElementById('credentials-view').classList.add('hidden');
+    document.getElementById('login-view').classList.remove('hidden');
+}
+
+// Allow Enter key to submit login
+document.getElementById('password').addEventListener('keydown', e => { if (e.key === 'Enter') doLogin(); });
+document.getElementById('email').addEventListener('keydown', e => { if (e.key === 'Enter') doLogin(); });
+
+// --- Load credentials from wallet ---
+
+async function loadCredentials() {
+    if (!authToken) return;
+
+    try {
+        const resp = await fetch(`${BASE}/api/wallet/credentials`, {
+            headers: { 'Authorization': authToken }
+        });
+
+        if (resp.status === 401) {
+            doLogout();
+            return;
+        }
+
+        const creds = await resp.json();
+        renderCredentials(creds);
+    } catch (e) {
+        document.getElementById('credentials-container').innerHTML =
+            '<p class="text-sm text-gray-300 text-center py-6">Could not load credentials.</p>';
+    }
+}
+
+function renderCredentials(creds) {
+    const container = document.getElementById('credentials-container');
+
+    if (!creds || creds.length === 0) {
+        container.innerHTML = `
+            <div class="text-center py-8">
+                <svg class="mx-auto h-10 w-10 text-gray-200 mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
+                          d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
+                </svg>
+                <p class="text-sm text-gray-300">No credentials in wallet.</p>
+                <p class="text-xs text-gray-200 mt-1">Issue credentials to see them here.</p>
+            </div>`;
+        return;
+    }
+
+    container.innerHTML = creds.map(cred => {
+        const typeName = friendlyType(cred.credentialType);
+        const holder = cred.holderName || 'Unknown holder';
+        const issuer = cred.issuerName || '';
+        const isRevoked = cred.status === 'revoked';
+        const isActive = cred.status === 'active';
+        const isExternal = cred.status === 'external';
+        const noStatus = cred.status === 'no status';
+
+        // Status badge
+        let statusBadge = '';
+        if (isRevoked) {
+            statusBadge = `<span class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-50 text-red-600">
+                <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                </svg>Revoked</span>`;
+        } else if (isActive) {
+            statusBadge = `<span class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-50 text-green-800">
+                <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+                </svg>Active</span>`;
+        } else if (isExternal) {
+            statusBadge = `<span class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-50 text-yellow-700">
+                <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                </svg>External</span>`;
+        } else {
+            statusBadge = `<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-50 text-gray-400">No status</span>`;
+        }
+
+        // Action button (only for credentials managed by our service)
+        let actionButton = '';
+        if (cred.managedByUs && isRevoked) {
+            actionButton = `<button onclick="confirmReinstate(${cred.statusIndex}, '${typeName.replace(/'/g,"\\'")}', '${holder.replace(/'/g,"\\'")}' )"
+                       class="inline-flex items-center text-xs font-medium rounded-full
+                              bg-green-50 hover:bg-green-100 text-green-800
+                              px-4 py-1.5 transition-colors">Reinstate</button>`;
+        } else if (cred.managedByUs && isActive) {
+            actionButton = `<button onclick="confirmRevoke(${cred.statusIndex}, '${typeName.replace(/'/g,"\\'")}', '${holder.replace(/'/g,"\\'")}' )"
+                       class="inline-flex items-center text-xs font-medium rounded-full
+                              bg-red-50 hover:bg-red-100 text-red-600
+                              px-4 py-1.5 transition-colors">Revoke</button>`;
+        }
+
+        // Icon color
+        const iconColor = isRevoked ? 'bg-red-50 text-red-400' : noStatus ? 'bg-gray-50 text-gray-300' : isExternal ? 'bg-yellow-50 text-yellow-500' : 'bg-primary-50 text-primary-400';
+
+        // Subtitle line
+        let subtitle = holder;
+        if (issuer) subtitle += ` &middot; ${issuer}`;
+
+        return `
+            <div class="border border-gray-100 rounded-lg p-4 mb-3">
+                <div class="flex items-center justify-between gap-4">
+                    <div class="flex items-center gap-3 min-w-0">
+                        <div class="flex-shrink-0 w-9 h-9 rounded-full ${iconColor} flex items-center justify-center">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                      d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
+                            </svg>
+                        </div>
+                        <div class="min-w-0">
+                            <p class="text-sm font-semibold text-gray-900 truncate">${typeName}</p>
+                            <p class="text-xs text-gray-400 truncate">${subtitle}</p>
+                        </div>
+                    </div>
+                    <div class="flex items-center gap-3 flex-shrink-0">
+                        ${statusBadge}
+                        ${actionButton}
+                    </div>
+                </div>
+                ${isExternal ? `<p class="mt-2 text-xs text-yellow-600 ml-12">Status managed by an external service</p>` : ''}
+            </div>`;
+    }).join('');
+}
+
+// --- Confirmation modals ---
+
+function showModal(title, message, iconHtml, confirmText, confirmClass, onConfirm) {
+    document.getElementById('modal-title').textContent = title;
+    document.getElementById('modal-message').textContent = message;
+    document.getElementById('modal-icon').innerHTML = iconHtml;
+    const btn = document.getElementById('modal-confirm');
+    btn.textContent = confirmText;
+    btn.className = `px-6 py-2 text-sm font-medium rounded-full text-white ${confirmClass}`;
+    btn.onclick = () => { closeModal(); onConfirm(); };
+    document.getElementById('modal-overlay').classList.remove('hidden');
+}
+
+function closeModal() {
+    document.getElementById('modal-overlay').classList.add('hidden');
+}
+
+function confirmRevoke(index, typeName, holder) {
+    showModal(
+        'Revoke Credential',
+        `Are you sure you want to revoke the ${typeName} for ${holder}? This credential will no longer pass verification.`,
+        `<div class="w-12 h-12 rounded-full bg-red-50 flex items-center justify-center mx-auto">
+            <svg class="w-6 h-6 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 16.5c-.77.833.192 2.5 1.732 2.5z"></path>
+            </svg>
+        </div>`,
+        'Revoke',
+        'bg-red-500 hover:bg-red-600',
+        () => doRevoke(index)
+    );
+}
+
+function confirmReinstate(index, typeName, holder) {
+    showModal(
+        'Reinstate Credential',
+        `Are you sure you want to reinstate the ${typeName} for ${holder}? This credential will pass verification again.`,
+        `<div class="w-12 h-12 rounded-full bg-green-50 flex items-center justify-center mx-auto">
+            <svg class="w-6 h-6 text-green-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+            </svg>
+        </div>`,
+        'Reinstate',
+        'bg-green-700 hover:bg-green-800',
+        () => doReinstate(index)
+    );
+}
+
+// --- API calls ---
+
+async function doRevoke(index) {
+    try {
+        await fetch(`${BASE}/status/revoke`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ statusListIndex: index })
+        });
+        showToast('Credential revoked successfully.', 'red');
+        loadCredentials();
+    } catch (e) {
+        showToast('Failed to revoke credential.', 'red');
+    }
+}
+
+async function doReinstate(index) {
+    try {
+        await fetch(`${BASE}/status/reinstate`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ statusListIndex: index })
+        });
+        showToast('Credential reinstated successfully.', 'green');
+        loadCredentials();
+    } catch (e) {
+        showToast('Failed to reinstate credential.', 'red');
+    }
+}
+
+// --- Toast ---
+
+function showToast(message, color) {
+    const toast = document.getElementById('toast');
+    const colors = {
+        green: 'bg-green-50 border-green-100 text-green-900',
+        red: 'bg-red-50 border-red-100 text-red-600',
+    };
+    toast.className = `fixed top-6 right-6 max-w-sm rounded-lg shadow-lg border px-5 py-4 text-sm z-50 ${colors[color] || colors.green}`;
+    toast.textContent = message;
+    toast.classList.remove('hidden');
+    setTimeout(() => toast.classList.add('hidden'), 3000);
+}
+</script>
+</body>
+</html>

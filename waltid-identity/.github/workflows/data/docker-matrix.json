@@ -1,0 +1,27 @@
+[
+  {
+    "context": "waltid-identity",
+    "folder": "waltid-identity/waltid-applications/waltid-web-wallet/apps/waltid-demo-wallet",
+    "image": "waltid-demo-wallet"
+  },
+  {
+    "context": "waltid-identity",
+    "folder": "waltid-identity/waltid-applications/waltid-web-wallet/apps/waltid-dev-wallet",
+    "image": "waltid-dev-wallet"
+  },
+  {
+    "context": "waltid-identity",
+    "folder": "waltid-identity/waltid-applications/waltid-web-portal",
+    "image": "portal"
+  },
+  {
+    "context": "waltid-identity/waltid-applications/waltid-credentials",
+    "folder": "waltid-identity/waltid-applications/waltid-credentials",
+    "image": "vc-repository"
+  },
+  {
+    "context": "waltid-identity-enterprise",
+    "folder": "waltid-identity-enterprise/waltid-enterprise-ui",
+    "image": "waltid-enterprise-ui"
+  }
+]

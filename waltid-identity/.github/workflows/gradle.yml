@@ -1,0 +1,98 @@
+name: Build gradle and/or publish (reusable workflow)
+
+on:
+  workflow_call:
+    inputs:
+      version:
+        description: "release version"
+        required: false
+        type: string
+      publish:
+        description: "Specifies whether to publish the artifacts (defaults to false)"
+        required: false
+        type: boolean
+        default: false
+
+jobs:
+  gradle:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        # macos-latest disabled until all multiplatform modules set up properly
+        # currently configured on workflow dispatch as a separate workflow (gradle-macos)
+        os: [ ubuntu-latest ]
+    steps:
+      - name: Checkout all repos with ref fallback
+        uses: walt-id/waltid-identity/.github/actions/checkout-repos@29f904ce0de831e02fe64507ebe284b02e66b50e
+        with:
+          token: ${{ secrets.GH_ACCESS_TOKEN }}
+
+      - name: Configure gradle
+        uses: walt-id/waltid-identity/.github/actions/gradle-setup-action@6bad7de2c6de9bc3faa68333de8b00be02613f4d
+
+      - name: Start tunnel and get URL
+        id: tunnel
+        run: |
+          # Start tunnel on port 7003
+          wget -q -O cloudflared https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64
+          chmod +x cloudflared
+          ./cloudflared tunnel --url http://localhost:7003 > lt_output.txt 2>&1 &
+
+          # Wait for tunnel to initialize
+          sleep 5
+
+          # Extract the tunnel URL from output
+          TUNNEL_URL=$(grep -Eo 'https://[a-z0-9-]+\.trycloudflare\.com' lt_output.txt | head -n 1)
+
+          if [ -z "$TUNNEL_URL" ]; then
+            echo "❌ Failed to get tunnel URL"
+            cat lt_output.txt
+            TUNNEL_URL=""
+          else
+            echo "✅ Tunnel URL: $TUNNEL_URL"
+          fi
+
+          echo "url=$TUNNEL_URL" >> $GITHUB_OUTPUT
+      - name: Replace URLs in Kotlin test
+        if: ${{ steps.tunnel.outputs.url != '' }}
+        run: |
+          FILE="./waltid-identity/waltid-services/waltid-openid4vp-conformance-runners/src/test/kotlin/id/walt/openid4vp/conformance/ConformanceTests.kt"
+          sed -i \
+            -e "s#https://verifier2.localhost/verification-session#${{ steps.tunnel.outputs.url }}/verification-session#g" \
+            -e "s#localhost.emobix.co.uk#conformance.waltid.cloud#g" \
+            -e "s#8443#443#g" \
+            "$FILE"
+      - name: Clean and build with all tests
+        if: ${{ runner.os != 'macos' }}
+        run: ./gradlew clean build cleanAllTests allTests --rerun-tasks --no-daemon --max-workers=3
+        env:
+          MAVEN_USERNAME: ${{ secrets.MAVEN_USERNAME }}
+          MAVEN_PASSWORD: ${{ secrets.MAVEN_PASSWORD }}
+
+      - name: Upload test reports
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: test-reports
+          path: |
+            **/build/reports/tests/test/
+            **/build/reports/tests/allTests/
+          retention-days: 30
+
+      - name: Build iOS Simulator Framework (ARM64)
+        if: ${{ runner.os == 'macos'}}
+        uses: walt-id/waltid-identity/.github/actions/gradle-ios@d3aa55fb102dadb48032778d6e1df9a8f9155261
+        with:
+          waltid-directory: 'waltid-identity'
+
+      - name: Set version
+        if: ${{ inputs.version != '' && runner.os == 'linux' }}
+        run: |
+          sed -i "s/1.0.0-SNAPSHOT/${{ inputs.version }}/g" build.gradle.kts
+
+      - name: Publish
+        if: ${{ inputs.publish && runner.os == 'linux' }}
+        env:
+          MAVEN_USERNAME: ${{ secrets.MAVEN_USERNAME }}
+          MAVEN_PASSWORD: ${{ secrets.MAVEN_PASSWORD }}
+        run: ./gradlew publish --no-daemon

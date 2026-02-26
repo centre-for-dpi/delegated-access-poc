@@ -1,0 +1,62 @@
+{
+	auto_https off
+	admin off
+}
+
+# Wallet API
+:{$WALLET_BACKEND_PORT} {
+    reverse_proxy http://wallet-api:{$WALLET_BACKEND_PORT}
+}
+
+# Issuer API
+:{$ISSUER_API_PORT} {
+    reverse_proxy http://issuer-api:{$ISSUER_API_PORT}
+}
+
+# Verifier API
+:{$VERIFIER_API_PORT} {
+    reverse_proxy http://verifier-api:{$VERIFIER_API_PORT}
+}
+
+# Verifier API2
+:{$VERIFIER_API2_PORT} {
+    reverse_proxy http://verifier-api2:{$VERIFIER_API2_PORT}
+}
+
+
+# Web Demo Wallet Frontend
+:{$DEMO_WALLET_FRONTEND_PORT} {
+    reverse_proxy http://waltid-demo-wallet:{$DEMO_WALLET_FRONTEND_PORT} # frontend
+    reverse_proxy /wallet-api/* http://wallet-api:{$WALLET_BACKEND_PORT} # backend
+}
+
+# Web Dev Wallet Frontend
+:{$DEV_WALLET_FRONTEND_PORT} {
+    reverse_proxy http://waltid-dev-wallet:{$DEV_WALLET_FRONTEND_PORT} # frontend
+    reverse_proxy /wallet-api/* http://wallet-api:{$WALLET_BACKEND_PORT} # backend
+}
+
+# Web Portal
+:{$WEB_PORTAL_PORT} {
+    reverse_proxy http://web-portal:{$WEB_PORTAL_PORT}
+}
+
+# VC Repo
+:{$VC_REPO_PORT} {
+    reverse_proxy http://vc-repo:{$VC_REPO_PORT}
+}
+
+# Verification Adapter
+:{$VERIFICATION_ADAPTER_PORT} {
+    reverse_proxy http://verification-adapter:{$VERIFICATION_ADAPTER_PORT}
+}
+
+# Status List Service
+:{$STATUS_LIST_PORT} {
+    reverse_proxy http://status-list-service:{$STATUS_LIST_PORT}
+}
+
+# pgAdmin
+:{$PG_ADMIN_PORT} {
+    reverse_proxy http://phpmyadmin:{$PG_ADMIN_PORT}
+}

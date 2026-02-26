@@ -1,0 +1,32 @@
+{
+  "type": [
+    "VerifiableCredential",
+    "BirthCertificate"
+  ],
+  "credentialSubject": {
+    "givenName": "",
+    "surname": "",
+    "dateOfBirth": "",
+    "sex": "",
+    "placeOfBirth": "",
+    "countryOfBirth": "",
+    "documentNumber": "",
+    "registrationNumber": "",
+    "dateOfRegistration": ""
+  },
+  "issuer": {
+    "id": "",
+    "image": {
+      "id": "https://github-production-user-asset-6210df.s3.amazonaws.com/48290617/271013046-ec675a25-a15a-4613-b3d6-310657f07ff4.png",
+      "type": "Image"
+    },
+    "name": "Testa Gava"
+  },
+  "expirationDate": "",
+  "credentialStatus": {
+    "type": "BitstringStatusListEntry",
+    "statusListCredential": "",
+    "statusListIndex": "",
+    "statusPurpose": "revocation"
+  }
+}

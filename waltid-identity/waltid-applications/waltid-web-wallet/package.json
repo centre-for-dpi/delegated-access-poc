@@ -1,0 +1,8 @@
+{
+  "name": "waltid-web-wallet",
+  "scripts": {},
+  "private": true,
+  "workspaces": [
+    "apps/*"
+  ]
+}

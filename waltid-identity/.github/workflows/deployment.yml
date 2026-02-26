@@ -1,0 +1,100 @@
+name: Deploy to environment (reusable workflow)
+
+on:
+  workflow_call:
+    inputs:
+      version:
+        description: "release version"
+        required: true
+        type: string
+      deployment:
+        description: "deployment file suffix (defaults to dev)"
+        required: false
+        type: string
+        default: "dev"
+      oss:
+        description: "deployment namespace (defaults to test-identity-main)"
+        required: false
+        type: string
+        default: "test-identity-main"
+      enterprise:
+        description: "deployment namespace (defaults to test-enterprise-main)"
+        required: false
+        type: string
+        default: "test-enterprise-main"
+      kubeconfig_secret:
+        description: "The name of the kubeconfig secret to use (defaults to 'AKS_KUBE_CONFIG')"
+        required: false
+        type: string
+        default: "AKS_KUBE_CONFIG"
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    env:
+      IMAGE_TAG: ${{ inputs.version }}
+      KEYCLOAK: ${{ secrets.DEV_KEYCLOAK_CLIENT_SECRET }}
+    strategy:
+      matrix:
+        services:
+          - k8s: waltid-identity/waltid-services/waltid-issuer-api/k8s
+            name: issuer
+            namespace: ${{ inputs.oss }}
+          - k8s: waltid-identity/waltid-services/waltid-verifier-api/k8s
+            name: verifier
+            namespace: ${{ inputs.oss }}
+          - k8s: waltid-identity/waltid-services/waltid-verifier-api2/k8s
+            name: verifier2
+            namespace: ${{ inputs.oss }}
+          - k8s: waltid-identity/waltid-services/waltid-wallet-api/k8s
+            name: web-wallet
+            namespace: ${{ inputs.oss }}
+            keycloak: true
+          - k8s: waltid-identity/waltid-applications/waltid-web-portal/k8s
+            name: portal
+            namespace: ${{ inputs.oss }}
+          - k8s: waltid-identity/waltid-services/waltid-verifier-api/k8s/opa
+            name: opa
+            namespace: ${{ inputs.oss }}
+          - k8s: waltid-identity-enterprise/k8s
+            name: waltid-enterprise
+            namespace: ${{ inputs.enterprise }}
+          - k8s: waltid-identity-enterprise/k8s
+            name: waltid-enterprise-sandbox
+            namespace: sandbox-enterprise-main
+
+    steps:
+      - name: Checkout all repos with ref fallback
+        uses: walt-id/waltid-identity/.github/actions/checkout-repos@29f904ce0de831e02fe64507ebe284b02e66b50e
+        with:
+          token: ${{ secrets.GH_ACCESS_TOKEN }}
+
+      - name: Prepare CD - ${{ matrix.services.name }}
+        if: matrix.services.name != 'waltid-enterprise'
+        run: |
+          modified_deployment=$(sed "s/_DEFAULT_DEPLOYMENT_/$GITHUB_SHA/g" ${{ matrix.services.k8s }}/deployment-${{ inputs.deployment }}.yaml | \
+                                sed "s/__DEFAULT_IMAGE_TAG__/$IMAGE_TAG/g")
+          if [ "${{ matrix.services.keycloak }}" == true ]; then
+            echo "$modified_deployment" | sed "s/__DEFAULT_KEYCLOAK_CLIENT_SECRET__/$KEYCLOAK/g" > ${{ matrix.services.k8s }}/deployment_mod.yaml
+          else
+            echo "$modified_deployment" > ${{ matrix.services.k8s }}/deployment_mod.yaml
+          fi
+      - name: Prepare CD
+        if: matrix.services.name == 'waltid-enterprise'
+        run: |
+          sed "s/_DEFAULT_DEPLOYMENT_/${GITHUB_SHA}/g" ${{ matrix.services.k8s }}/deployment-${{ inputs.deployment }}.yaml | 
+          sed "s/__DEFAULT_IMAGE_TAG__/$IMAGE_TAG/g" |
+          sed "s!mongodb://root:password@localhost:27017/!${{ secrets.MONGODB_URL }}!g" > ${{ matrix.services.k8s }}/deployment_mod.yaml
+      - name: Prepare CD
+        if: matrix.services.name == 'waltid-enterprise-sandbox' && inputs.deployment == 'prod'
+        run: |
+          sed "s/_DEFAULT_DEPLOYMENT_/${GITHUB_SHA}/g" ${{ matrix.services.k8s }}/sandbox-aks.yaml | 
+          sed "s/__DEFAULT_IMAGE_TAG__/$IMAGE_TAG/g" |
+          sed "s!mongodb://root:password@localhost:27017/!${{ secrets.MONGODB_URL }}!g" > ${{ matrix.services.k8s }}/deployment_mod.yaml
+
+      - name: Continuous deployment - ${{ matrix.services.name }}
+        uses: actions-hub/kubectl@master
+        env:
+          KUBE_CONFIG: ${{ secrets[inputs.kubeconfig_secret] }}
+        with:
+          args: apply -n ${{ matrix.services.namespace }} -f ${{ matrix.services.k8s }}/deployment_mod.yaml

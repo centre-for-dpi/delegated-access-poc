@@ -1,0 +1,23 @@
+name: Configure gradle
+description: Composite Action to setup gradle
+inputs:
+  location:
+    description: "Relative path to the Gradle project"
+    required: false
+    default: "~"
+
+runs:
+  using: "composite"
+  steps:
+    - name: Setup JDK
+      uses: actions/setup-java@v4
+      with:
+        distribution: 'temurin'
+        java-version: '21'
+    - name: Setup Gradle
+      uses: gradle/actions/setup-gradle@v5
+      with:
+        cache-overwrite-existing: true
+        dependency-graph: generate-and-submit
+    - name: Gradle wrapper validation
+      uses: gradle/actions/wrapper-validation@v5

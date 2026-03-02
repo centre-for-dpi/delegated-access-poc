@@ -4,53 +4,59 @@
 
 A parent needs to access government services on behalf of their child — enrolling them in school, collecting benefits, or visiting a hospital. Today this typically requires physical documents and in-person visits. This project proves that **verifiable digital credentials** can solve this problem securely and instantly.
 
-The system issues two digital credentials: a **Birth Certificate** proving the child's identity, and a **Parental Delegation Credential** proving the parent's authority to act on the child's behalf. These are cryptographically linked — a verifier can confirm in seconds that the parent is authorised to represent that specific child, that the credentials haven't expired, and that neither has been revoked.
+An administrator designs credential schemas through the **Issuer Portal** — defining identity credentials (e.g. Birth Certificate) and delegation credentials (e.g. Parental Delegation) with fields that reference other credentials via DID. The system dynamically detects these `did_ref` links and enforces `same_subject` constraints at verification time, ensuring the delegation credential refers to the correct identity credential.
 
-If a credential is compromised or a delegation is withdrawn, an administrator can revoke it instantly through a web interface. Any subsequent verification attempt will fail.
+If a credential is compromised or a delegation is withdrawn, an administrator can revoke it instantly through the Issuer Portal. Any subsequent verification attempt will fail.
 
 ---
 
 ## Architecture Overview
 
-```md
-                         ┌──────────────────────────┐
-                         │      Credential Issuer    │
-                         │   (issuer-api :7002)      │
-                         └────────┬─────────────────┘
-                                  │ issues
-                    ┌─────────────┼─────────────────┐
-                    ▼                                ▼
-          ┌──────────────────┐            ┌──────────────────────────┐
-          │ BirthCertificate │            │ ParentalDelegation       │
-          │ subject: child   │◄──────────►│ subject: parent          │
-          │ index: N         │ same_subject│ onBehalfOf: child       │
-          └────────┬─────────┘  linking   │ index: M                 │
-                   │                      └────────┬─────────────────┘
-                   │                               │
-                   └───────────┬───────────────────┘
-                               ▼
-                    ┌─────────────────────┐
-                    │   Parent's Wallet   │
-                    │  (wallet-api :7001) │
-                    └────────┬────────────┘
-                             │ presents both
+```
+                    ┌──────────────────────────────┐
+                    │       Issuer Portal (:7107)   │
+                    │  schema design, issuance,     │
+                    │  revocation, status list mgmt  │
+                    └──────────┬───────────────────┘
+                               │ issues via issuer-api
+                 ┌─────────────┼──────────────────┐
+                 ▼                                 ▼
+       ┌───────────────────┐           ┌─────────────────────────┐
+       │ Identity Credential│           │ Delegation Credential    │
+       │ subjectDID: generate│◄────────►│ subjectDID: wallet       │
+       │ e.g. BirthCert     │same_subject│ did_ref → identity DID  │
+       └────────┬───────────┘  linking  └────────┬────────────────┘
+                │                                │
+                └────────────┬───────────────────┘
                              ▼
-                    ┌─────────────────────┐      ┌─────────────────────┐
-                    │      Verifier       │─────►│  Status List Service│
-                    │ (verifier-api :7003)│checks │  (:7006)            │
-                    └─────────────────────┘      └─────────────────────┘
+                  ┌─────────────────────┐
+                  │   Holder's Wallet   │
+                  │  (wallet-api :7001) │
+                  └────────┬────────────┘
+                           │ presents both
+                           ▼
+              ┌──────────────────────────┐
+              │  Verification Portal     │
+              │       (:7108)            │
+              │  dynamic schema select,  │
+              │  QR code, result display │
+              └────────┬─────────────────┘
+                       │ creates session via
+                       ▼
+              ┌─────────────────────┐
+              │   verifier-api      │
+              │     (:7003)         │
+              └─────────────────────┘
 ```
 
 ## Credential Linking (same_subject)
 
-The two credentials are linked by the child's DID:
+Credentials are linked dynamically based on schema field types:
 
-| Field | BirthCertificate | ParentalDelegationCredential |
-| --- | --- | --- |
-| Subject DID | `credentialSubject.id` = child | `credentialSubject.id` = parent |
-| Link to child | — | `credentialSubject.onBehalfOf.id` = child |
+- **Identity credentials** have `subjectDidStrategy: "generate"` — the issuer generates a unique DID for the credential subject (stored in `credentialSubject.id`).
+- **Delegation credentials** contain one or more `did_ref` fields — these reference DIDs from other credentials (e.g. `credentialSubject.onBehalfOf` or `credentialSubject.onBehalfOf.id`).
 
-The verifier's presentation definition enforces a `same_subject` constraint: `BirthCertificate.credentialSubject.id` must equal `ParentalDelegationCredential.credentialSubject.onBehalfOf.id`. Both credentials must be presented together; neither is sufficient alone.
+The verification portals discover these relationships at runtime by fetching schemas from the Issuer Portal's `/api/schemas` endpoint. The presentation definition's `same_subject` constraint ensures the `did_ref` value in the delegation credential matches `credentialSubject.id` in the identity credential. Both credentials must be presented together; neither is sufficient alone.
 
 ## Revocation (BitstringStatusList)
 
@@ -79,9 +85,11 @@ Bitstring:  [0][0][0][1][0][0]...   ← bit 3 is set = credential at index 3 is 
 | **issuer-api** | 7002 | walt.id (Kotlin) | Signs and issues credentials via OID4VCI |
 | **verifier-api** | 7003 | walt.id (Kotlin) | Verifies presentations via OID4VP |
 | **wallet-api** | 7001 | walt.id (Kotlin) | Stores credentials, handles claim/present flows |
-| **status-list-service** | 7006 | Go | Manages revocation bitstring, signs status list credential, provides management UI |
-| **verification-adapter** | 7105 | Go | User-facing verification UI with QR code and result display |
-| **web-portal** | 7102 | Next.js (walt.id) | Credential issuance and verification portal |
+| **issuer-portal** | 7107 | Go | Schema design, credential issuance, revocation, status list management |
+| **verification-portal** | 7108 | Go | Dynamic credential verification UI with per-credential result coloring |
+| **verification-adapter** | 7105 | Go | Original verification UI (hardcoded credential types) |
+| **opa-server** | 8181 | Open Policy Agent | Policy evaluation for verifier |
+| **web-portal** | 7102 | Next.js (walt.id) | walt.id credential issuance and verification portal |
 | **vc-repo** | 7103 | Nuxt (walt.id) | Credential template repository |
 | **demo-wallet** | 7101 | Nuxt (walt.id) | Browser-based wallet UI |
 | **caddy** | — | Caddy | Reverse proxy, routes all ports |
@@ -89,67 +97,61 @@ Bitstring:  [0][0][0][1][0][0]...   ← bit 3 is set = credential at index 3 is 
 
 ## Custom Components
 
-### Status List Service (`status-list-service/`)
+### Issuer Portal (`issuer-portal/`)
 
-A Go microservice implementing W3C BitstringStatusList revocation.
+A Go web application for schema design, credential issuance, and revocation management.
 
 | File | Purpose |
 | --- | --- |
-| `main.go` | HTTP server, route registration, config from env vars |
-| `bitstring.go` | 131,072-bit array with GZIP+base64url encoding, disk persistence |
-| `handlers.go` | Revoke, reinstate, allocate index, query status, list credentials |
-| `signing.go` | Delegates JWT signing to issuer-api's `/raw/jwt/sign` endpoint |
-| `wallet.go` | Proxies wallet API for the management UI (avoids CORS) |
+| `main.go` | HTTP server, route registration, config |
+| `models.go` | Schema registry with field types (`string`, `number`, `date`, `did_ref`, etc.) |
+| `schema.go` | Schema CRUD, HOCON config generation for issuer-api |
+| `issuance.go` | Credential issuance via OID4VCI (creates offer URLs) |
+| `bitstring.go` | BitstringStatusList revocation (131,072-bit array) |
+| `signing.go` | JWT signing delegation to issuer-api |
+| `api.go` | REST API endpoints (`/api/schemas`, `/api/issue`, etc.) |
+| `docker.go` | Live issuer-api container restart on schema changes |
 
-**Key endpoints:**
+**Key concepts:**
+- **`subjectDidStrategy`**: `"generate"` = issuer creates a unique DID for the subject (identity credentials); `"wallet"` = subject DID comes from the holder's wallet (delegation credentials)
+- **`did_ref` field type**: Marks a field as a DID reference to another credential's subject, enabling automatic `same_subject` constraint generation
+- **Schema API** (`/api/schemas`): Returns all registered schemas with fields and `subjectDidStrategy`, consumed by verification portals
 
-| Method | Path | Purpose |
-| --- | --- | --- |
-| GET | `/status/revocation/1` | Serves signed BitstringStatusListCredential (verifiers fetch this) |
-| POST | `/status/revoke` | Sets bit to 1 (revoked) |
-| POST | `/status/reinstate` | Sets bit to 0 (active) |
-| POST | `/status/allocate` | Returns next available index |
-| GET | `/status/query/{index}` | Returns current status of an index |
-| GET | `/` | Management UI (login with wallet credentials, revoke/reinstate) |
+### Verification Portal (`verification-portal/`)
 
-### Verification Adapter (`verification-adapter-waltid/`)
-
-A Go web application providing a user-friendly verification flow.
+A Go web application providing dynamic credential verification with per-credential result coloring.
 
 | File | Purpose |
 | --- | --- |
 | `main.go` | HTTP server, session cleanup, template loading |
-| `verifier.go` | Creates verification sessions with presentation definition and policies |
-| `handlers.go` | Home page, QR display, polling, result rendering |
-| `session.go` | In-memory session store with 30-minute TTL |
+| `verifier.go` | Fetches schemas from issuer-portal, detects delegation relationships, builds dynamic verification requests with `same_subject` constraints |
+| `handlers.go` | Home page, QR display, polling, per-credential result rendering |
+| `session.go` | In-memory session store, polymorphic policy error handling |
 
-The presentation definition requests both credential types and enforces `same_subject` linking between `credentialSubject.id` (BirthCertificate) and `credentialSubject.onBehalfOf.id` (ParentalDelegationCredential).
+**Dynamic delegation detection:** On each verification request, the portal fetches schemas from the issuer-portal API, identifies identity schemas (`subjectDidStrategy: "generate"`) and delegation schemas (containing `did_ref` fields), and builds a presentation definition with `same_subject` constraints linking the delegation's `did_ref` path to the identity credential's `credentialSubject.id`.
+
+**Per-credential result coloring:** When verification fails, each credential card is individually colored red or green based on which policies failed. VP-level `same_subject` failures are attributed to the delegation credential (identified by `ref_` prefix in the constraint field IDs).
+
+### Verification Adapter (`verification-adapter-waltid/`)
+
+The original Go verification UI with hardcoded credential types (BirthCertificate + ParentalDelegationCredential). Superseded by the verification-portal for dynamic use cases.
 
 ## Verification Policies
 
 Every verification checks these policies:
 
-| Policy | What It Checks |
-| --- | --- |
-| `signature` | EdDSA cryptographic signature is valid |
-| `expired` | Credential has not passed its expiration date |
-| `not-before` | Credential's validity period has started |
-| `credential-status` | BitstringStatusList bit is 0 (not revoked) |
-| `presentation-definition` | Both required credential types are present |
-| `same_subject` | Child's DID matches across both credentials |
+| Level | Policy | What It Checks |
+| --- | --- | --- |
+| VC | `signature` | EdDSA cryptographic signature is valid |
+| VC | `expired` | Credential has not passed its expiration date |
+| VC | `not-before` | Credential's validity period has started |
+| VC | `credential-status` | BitstringStatusList bit is 0 (not revoked) |
+| VP | `signature` | Verifiable presentation signature is valid |
+| VP | `presentation-definition` | All required credential types are present |
+| VP | `same_subject` | DID references match across linked credentials |
 
-## Test Script (`test-delegated-access.sh`)
-
-Automated end-to-end test covering the full lifecycle:
-
-```txt
-A. Issue both credentials → Verify → PASS (all policies green)
-B. Revoke BirthCertificate → Verify → FAIL (credential-status fails)
-C. Reinstate BirthCertificate → Verify → PASS (all policies green again)
-```
-
-Run: `bash scripts/test-delegated-access.sh`
+The `same_subject` constraint is generated dynamically based on `did_ref` fields discovered in the schemas.
 
 ## Docker Networking
 
-All inter-service communication uses Docker DNS (`http://issuer-api:7002`, `http://status-list-service:7006`). The `statusListCredential` URL embedded in credentials uses the Docker service name so the verifier can fetch the status list from inside the Docker network. External access from the host uses `localhost:{port}` via Caddy.
+All inter-service communication uses Docker DNS (e.g. `http://issuer-api:7002`, `http://issuer-portal:7107`). The `statusListCredential` URL embedded in credentials uses the Docker service name so the verifier can fetch the status list from inside the Docker network. External access from the host uses `localhost:{port}` via Caddy.

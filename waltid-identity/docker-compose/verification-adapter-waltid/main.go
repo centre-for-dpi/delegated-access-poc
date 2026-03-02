@@ -11,6 +11,7 @@ type Config struct {
 	Port                  string
 	VerifierAPIURL        string
 	DemoWalletFrontendURL string
+	IssuerPortalURL       string
 	ServiceHost           string
 	SelfURL               string
 }
@@ -27,11 +28,13 @@ func loadConfig() Config {
 	serviceHost := envOr("SERVICE_HOST", "localhost")
 	verifierPort := envOr("VERIFIER_API_PORT", "7003")
 	walletPort := envOr("DEMO_WALLET_FRONTEND_PORT", "7101")
+	issuerPortalPort := envOr("ISSUER_PORTAL_PORT", "7107")
 
 	return Config{
 		Port:                  port,
 		VerifierAPIURL:        "http://verifier-api:" + verifierPort,
 		DemoWalletFrontendURL: "http://" + serviceHost + ":" + walletPort,
+		IssuerPortalURL:       "http://issuer-portal:" + issuerPortalPort,
 		ServiceHost:           serviceHost,
 		SelfURL:               "http://" + serviceHost + ":" + port,
 	}

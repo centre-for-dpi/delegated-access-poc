@@ -1,0 +1,63 @@
+{{define "content"}}
+<h1 class="text-xl sm:text-2xl font-bold text-gray-900 mb-1">Onboard New Issuer</h1>
+<p class="text-gray-400 text-sm mb-6">Generate a cryptographic key and DID for a new credential issuer</p>
+
+<hr class="mb-6 border-gray-100">
+
+{{if .Error}}
+<div class="mb-6 bg-red-50 border border-red-100 rounded-lg p-4 text-sm text-red-600">{{.Error}}</div>
+{{end}}
+
+<form method="POST" action="/issuers" class="space-y-5">
+    <div>
+        <label for="name" class="block text-xs font-medium text-gray-500 mb-1">Issuer Name</label>
+        <input type="text" id="name" name="name" required placeholder="e.g., National Civil Registry"
+               class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-900
+                      focus:outline-none focus:ring-2 focus:ring-primary-200 focus:border-primary-400">
+        <p class="text-xs text-gray-300 mt-1">The organization name that will appear on issued credentials</p>
+    </div>
+
+    <div class="grid grid-cols-2 gap-4">
+        <div>
+            <label for="keyType" class="block text-xs font-medium text-gray-500 mb-1">Key Type</label>
+            <select id="keyType" name="keyType"
+                    class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-900
+                           focus:outline-none focus:ring-2 focus:ring-primary-200 focus:border-primary-400">
+                <option value="Ed25519" selected>Ed25519 (EdDSA)</option>
+                <option value="secp256r1">secp256r1 (ES256)</option>
+                <option value="secp256k1">secp256k1 (ES256K)</option>
+                <option value="RSA">RSA (RS256)</option>
+            </select>
+        </div>
+        <div>
+            <label for="didMethod" class="block text-xs font-medium text-gray-500 mb-1">DID Method</label>
+            <select id="didMethod" name="didMethod"
+                    class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-900
+                           focus:outline-none focus:ring-2 focus:ring-primary-200 focus:border-primary-400">
+                <option value="key" selected>did:key</option>
+                <option value="jwk">did:jwk</option>
+            </select>
+        </div>
+    </div>
+
+    <div class="bg-primary-50 rounded-lg p-4 text-xs text-primary-700">
+        <p class="font-medium mb-1">What happens during onboarding:</p>
+        <ul class="list-disc list-inside space-y-0.5 text-primary-600">
+            <li>A cryptographic keypair is generated for the issuer</li>
+            <li>A Decentralized Identifier (DID) is created from the public key</li>
+            <li>The issuer profile is saved for future credential issuance</li>
+        </ul>
+    </div>
+
+    <div class="flex justify-end gap-3">
+        <a href="/" class="px-6 py-2 text-sm font-medium rounded-full bg-gray-100 hover:bg-gray-200 text-gray-600">Cancel</a>
+        <button type="submit"
+                class="inline-flex items-center gap-2 text-sm font-medium rounded-full bg-primary-400 hover:bg-primary-500 text-white px-6 py-2.5 shadow-sm">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z"></path>
+            </svg>
+            Generate Key &amp; DID
+        </button>
+    </div>
+</form>
+{{end}}

@@ -1,0 +1,19 @@
+{{define "did_ref_results.html"}}
+{{if .Credentials}}
+{{range .Credentials}}
+<button type="button"
+        onclick="selectDid('{{$.FieldName}}', '{{.SubjectDID}}', '{{.TypeName}}', '{{.SubjectName}}')"
+        class="w-full text-left p-2.5 hover:bg-primary-50 cursor-pointer transition-colors block border-b border-gray-50 last:border-0">
+    <div class="flex items-center justify-between">
+        <div>
+            <p class="text-xs font-medium text-gray-700">{{.SubjectName}}</p>
+            <p class="text-xs text-gray-400">{{.TypeName}}</p>
+        </div>
+        <p class="text-xs font-mono text-gray-300 truncate ml-4" style="max-width:200px">{{.SubjectDID}}</p>
+    </div>
+</button>
+{{end}}
+{{else}}
+<p class="text-xs text-gray-300 p-3 text-center">No credentials with subject DIDs found</p>
+{{end}}
+{{end}}

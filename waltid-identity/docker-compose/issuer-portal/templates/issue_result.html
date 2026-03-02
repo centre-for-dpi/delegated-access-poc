@@ -1,0 +1,76 @@
+{{define "issue_result.html"}}
+<div class="mt-6 border border-green-100 bg-green-50 rounded-lg p-6">
+    <div class="flex items-center gap-2 mb-4">
+        <svg class="w-5 h-5 text-green-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+        </svg>
+        <h3 class="text-sm font-bold text-green-900">Credential Issued Successfully</h3>
+    </div>
+
+    <div class="mb-4 text-xs text-green-800 space-y-1">
+        <p><span class="font-medium">Type:</span> {{.Schema.DisplayName}}</p>
+        <p><span class="font-medium">Subject:</span> {{.Credential.SubjectName}}</p>
+        {{if .Credential.SubjectDID}}
+        <p><span class="font-medium">Subject DID:</span> <span class="font-mono">{{.Credential.SubjectDID}}</span></p>
+        {{end}}
+        <p><span class="font-medium">Status Index:</span> {{.Credential.StatusListIndex}}</p>
+    </div>
+
+    <!-- QR Code -->
+    <div class="bg-white rounded-lg p-4 mb-4">
+        <p class="text-xs font-medium text-gray-500 mb-3 text-center">Scan to claim into wallet</p>
+        <div class="flex justify-center mb-3">
+            <canvas id="qrcode-canvas"></canvas>
+        </div>
+        <div class="flex justify-center gap-3">
+            <a href="{{.WalletURL}}" target="_blank"
+               class="inline-flex items-center gap-1 text-xs font-medium text-primary-400 hover:text-primary-500">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"></path>
+                </svg>
+                Open in Demo Wallet
+            </a>
+            <button onclick="navigator.clipboard.writeText('{{.OfferURL}}'); showToast('Copied!', 'green')"
+                    class="inline-flex items-center gap-1 text-xs font-medium text-gray-400 hover:text-gray-600">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3"></path>
+                </svg>
+                Copy URL
+            </button>
+        </div>
+    </div>
+
+    <div class="flex justify-center gap-3">
+        <a href="/issuers/{{.Issuer.ID}}/schemas/{{.Schema.ID}}/issue"
+           class="text-xs font-medium text-green-700 hover:text-green-800">Issue Another</a>
+        <a href="/issuers/{{.Issuer.ID}}/credentials"
+           class="text-xs font-medium text-gray-400 hover:text-gray-600">View Registry</a>
+    </div>
+</div>
+
+<script>
+(function() {
+    var url = '{{.OfferURL}}';
+    var qr = qrcode(0, 'L');
+    qr.addData(url);
+    qr.make();
+    var canvas = document.getElementById('qrcode-canvas');
+    var ctx = canvas.getContext('2d');
+    var cellSize = 4;
+    var count = qr.getModuleCount();
+    var margin = 4;
+    canvas.width = (count + margin * 2) * cellSize;
+    canvas.height = (count + margin * 2) * cellSize;
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.fillStyle = '#1F2933';
+    for (var row = 0; row < count; row++) {
+        for (var col = 0; col < count; col++) {
+            if (qr.isDark(row, col)) {
+                ctx.fillRect((col + margin) * cellSize, (row + margin) * cellSize, cellSize, cellSize);
+            }
+        }
+    }
+})();
+</script>
+{{end}}

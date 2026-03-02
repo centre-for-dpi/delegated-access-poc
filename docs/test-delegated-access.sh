@@ -3,22 +3,23 @@
 # Delegated Access PoC — End-to-End Test Script
 #
 # Tests the Linked Credential Chain (Type I) pattern:
-#   1. Issues a BirthCertificate (child as subject) with credentialStatus
-#   2. Issues a ParentalDelegationCredential (parent as subject, onBehalfOf child)
-#   3. Claims both into the parent's wallet
-#   4. Creates a verification session with same_subject + credential-status policies
-#   5. Presents both credentials in a single VP
-#   6. Verifies the result (happy path)
-#   7. Revokes the BirthCertificate and verifies failure
-#   8. Reinstates the BirthCertificate and verifies success again
+#   1. Imports an issuer into the issuer-portal (with existing key+DID)
+#   2. Issues a BirthCertificate (child as subject) with credentialStatus
+#   3. Issues a ParentalDelegationCredential (parent as subject, onBehalfOf child)
+#   4. Claims both into the parent's wallet
+#   5. Creates a verification session with same_subject + credential-status policies
+#   6. Presents both credentials in a single VP
+#   7. Verifies the result (happy path)
+#   8. Revokes the BirthCertificate and verifies failure
+#   9. Reinstates the BirthCertificate and verifies success again
 #
 # Prerequisites:
 #   - Docker Compose stack running: COMPOSE_PROFILES=identity,opa docker compose up -d
 #   - A wallet account registered (default: adamndegwa@gmail.com / 1234)
 #
 # Usage:
-#   ./scripts/test-delegated-access.sh
-#   ./scripts/test-delegated-access.sh --email user@example.com --password secret
+#   ./docs/test-delegated-access.sh
+#   ./docs/test-delegated-access.sh --email user@example.com --password secret
 #
 
 set -euo pipefail
@@ -29,7 +30,7 @@ SERVICE_HOST="${SERVICE_HOST:-localhost}"
 ISSUER_API="http://${SERVICE_HOST}:7002"
 VERIFIER_API="http://${SERVICE_HOST}:7003"
 WALLET_API="http://${SERVICE_HOST}:7001"
-STATUS_LIST_API="http://${SERVICE_HOST}:7006"
+ISSUER_PORTAL_API="http://${SERVICE_HOST}:7107"
 
 WALLET_EMAIL="${WALLET_EMAIL:-adamndegwa@gmail.com}"
 WALLET_PASSWORD="${WALLET_PASSWORD:-1234}"
@@ -49,10 +50,6 @@ ISSUER_DID="did:key:z6MkjoRhq1jSNJdLiruSXrFFxagqrztZaXHqHGUTKJbcNywp"
 
 # Child DID (deterministic for reproducibility)
 CHILD_DID="did:key:z6MkhaXgBZDvotDkL5257faiztiGiC2QtKLGpbnnEGta2doK"
-
-# Status list credential URL embedded in credentials (Docker service name for
-# verifier-api to fetch from inside the Docker network)
-STATUS_LIST_CREDENTIAL_URL="http://status-list-service:7006/status/revocation/1"
 
 # --- Helpers -----------------------------------------------------------------
 
@@ -188,7 +185,7 @@ step "Pre-flight checks"
 check_service "Issuer API"       "$ISSUER_API"
 check_service "Verifier API"     "$VERIFIER_API"
 check_service "Wallet API"       "$WALLET_API"
-check_service "Status List API"  "$STATUS_LIST_API/health"
+check_service "Issuer Portal"    "$ISSUER_PORTAL_API/health"
 
 # Verify credential types are registered
 ISSUER_METADATA=$(curl -s "$ISSUER_API/draft13/.well-known/openid-credential-issuer")
@@ -205,9 +202,31 @@ else
   exit 1
 fi
 
-# --- Step 1: Authenticate to wallet -----------------------------------------
+# --- Step 1: Import issuer into portal ---------------------------------------
 
-step "Step 1: Authenticate to wallet"
+step "Step 1: Import issuer into portal"
+
+PORTAL_ISSUER=$(curl -s -X POST "$ISSUER_PORTAL_API/api/issuers/import" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Testa Gava Civil Registry",
+    "keyType": "Ed25519",
+    "didMethod": "key",
+    "issuerKey": '"$ISSUER_KEY"',
+    "issuerDid": "'"$ISSUER_DID"'"
+  }')
+
+PORTAL_ISSUER_ID=$(echo "$PORTAL_ISSUER" | python3 -c "import json,sys; print(json.load(sys.stdin)['id'])")
+ok "Issuer imported to portal: $PORTAL_ISSUER_ID"
+info "DID: $ISSUER_DID"
+
+# Status list credential URL (Docker-internal: verifier-api fetches from issuer-portal inside Docker network)
+STATUS_LIST_CREDENTIAL_URL="http://issuer-portal:7107/issuers/${PORTAL_ISSUER_ID}/status/revocation/1"
+info "Status list URL: $STATUS_LIST_CREDENTIAL_URL"
+
+# --- Step 2: Authenticate to wallet -----------------------------------------
+
+step "Step 2: Authenticate to wallet"
 TOKEN=$(curl -s -X POST "$WALLET_API/wallet-api/auth/login" \
   -H 'accept: application/json' \
   -H 'Content-Type: application/json' \
@@ -220,9 +239,9 @@ WALLET_ID=$(curl -s "$WALLET_API/wallet-api/wallet/accounts/wallets" \
   | python3 -c "import json,sys; print(json.load(sys.stdin)['wallets'][0]['id'])")
 ok "Wallet ID: $WALLET_ID"
 
-# --- Step 1b: Clear old credentials from wallet ------------------------------
+# --- Step 2b: Clear old credentials from wallet ------------------------------
 
-step "Step 1b: Clear old credentials from wallet"
+step "Step 2b: Clear old credentials from wallet"
 OLD_CREDS=$(curl -s "$WALLET_API/wallet-api/wallet/$WALLET_ID/credentials" \
   -H "Authorization: Bearer $TOKEN" \
   | python3 -c "
@@ -239,23 +258,23 @@ for cred_id in $OLD_CREDS; do
 done
 ok "Deleted $DELETED old credential(s)"
 
-# --- Step 2: Allocate status list indices ------------------------------------
+# --- Step 3: Allocate status list indices ------------------------------------
 
-step "Step 2: Allocate status list indices"
-BIRTH_INDEX=$(curl -s -X POST "$STATUS_LIST_API/status/allocate" \
+step "Step 3: Allocate status list indices"
+BIRTH_INDEX=$(curl -s -X POST "$ISSUER_PORTAL_API/api/issuers/$PORTAL_ISSUER_ID/status/allocate" \
   -H "Content-Type: application/json" \
-  -d '{"credentialType":"BirthCertificate","holderName":"Maria Garcia Lopez"}' \
+  -d '{}' \
   | python3 -c "import json,sys; print(json.load(sys.stdin)['index'])")
-DELEG_INDEX=$(curl -s -X POST "$STATUS_LIST_API/status/allocate" \
+DELEG_INDEX=$(curl -s -X POST "$ISSUER_PORTAL_API/api/issuers/$PORTAL_ISSUER_ID/status/allocate" \
   -H "Content-Type: application/json" \
-  -d '{"credentialType":"ParentalDelegationCredential","holderName":"Ana Lopez Martinez"}' \
+  -d '{}' \
   | python3 -c "import json,sys; print(json.load(sys.stdin)['index'])")
 ok "BirthCertificate index: $BIRTH_INDEX"
 ok "ParentalDelegationCredential index: $DELEG_INDEX"
 
-# --- Step 3: Issue BirthCertificate -----------------------------------------
+# --- Step 4: Issue BirthCertificate -----------------------------------------
 
-step "Step 3: Issue BirthCertificate (child as subject, with credentialStatus)"
+step "Step 4: Issue BirthCertificate (child as subject, with credentialStatus)"
 info "Issuer DID: $ISSUER_DID"
 info "Child DID:  $CHILD_DID"
 info "Status list index: $BIRTH_INDEX"
@@ -310,9 +329,9 @@ else
   exit 1
 fi
 
-# --- Step 4: Issue ParentalDelegationCredential ------------------------------
+# --- Step 5: Issue ParentalDelegationCredential ------------------------------
 
-step "Step 4: Issue ParentalDelegationCredential (parent as subject, onBehalfOf child)"
+step "Step 5: Issue ParentalDelegationCredential (parent as subject, onBehalfOf child)"
 info "Status list index: $DELEG_INDEX"
 
 DELEGATION_OFFER=$(curl -s -X POST "$ISSUER_API/openid4vc/jwt/issue" \
@@ -369,9 +388,9 @@ else
   exit 1
 fi
 
-# --- Step 5: Claim credentials into wallet -----------------------------------
+# --- Step 6: Claim credentials into wallet -----------------------------------
 
-step "Step 5: Claim both credentials into wallet"
+step "Step 6: Claim both credentials into wallet"
 
 # Claim BirthCertificate
 CLAIM_RESULT=$(curl -s -X POST "$WALLET_API/wallet-api/wallet/$WALLET_ID/exchange/useOfferRequest" \
@@ -387,9 +406,9 @@ CLAIM_RESULT=$(curl -s -X POST "$WALLET_API/wallet-api/wallet/$WALLET_ID/exchang
   -d "$DELEGATION_OFFER")
 ok "ParentalDelegationCredential claimed"
 
-# --- Step 6: Verify wallet contents ------------------------------------------
+# --- Step 7: Verify wallet contents ------------------------------------------
 
-step "Step 6: Verify wallet contents"
+step "Step 7: Verify wallet contents"
 
 CRED_INFO=$(curl -s "$WALLET_API/wallet-api/wallet/$WALLET_ID/credentials" \
   -H "Authorization: Bearer $TOKEN" \
@@ -455,14 +474,17 @@ present_and_check "$VERIFY_URL" "$SESSION_ID" "pass" || exit 1
 
 step "TEST B: Revoke BirthCertificate (index $BIRTH_INDEX)"
 
-REVOKE_RESULT=$(curl -s -X POST "$STATUS_LIST_API/status/revoke" \
+REVOKE_RESULT=$(curl -s -X POST "$ISSUER_PORTAL_API/api/issuers/$PORTAL_ISSUER_ID/status/revoke" \
   -H "Content-Type: application/json" \
   -d "{\"statusListIndex\": $BIRTH_INDEX}")
 REVOKE_STATUS=$(echo "$REVOKE_RESULT" | python3 -c "import json,sys; print(json.load(sys.stdin)['status'])")
 ok "Revocation response: $REVOKE_STATUS"
 
 # Confirm via query
-QUERY_STATUS=$(curl -s "$STATUS_LIST_API/status/query/$BIRTH_INDEX" | python3 -c "import json,sys; print(json.load(sys.stdin)['status'])")
+QUERY_STATUS=$(curl -s -X POST "$ISSUER_PORTAL_API/api/issuers/$PORTAL_ISSUER_ID/status/query" \
+  -H "Content-Type: application/json" \
+  -d "{\"statusListIndex\": $BIRTH_INDEX}" \
+  | python3 -c "import json,sys; print(json.load(sys.stdin)['status'])")
 ok "Query confirms index $BIRTH_INDEX is: $QUERY_STATUS"
 
 step "TEST B: Verify credentials (should FAIL — BirthCertificate revoked)"
@@ -478,14 +500,17 @@ present_and_check "$VERIFY_URL" "$SESSION_ID" "fail" || exit 1
 
 step "TEST C: Reinstate BirthCertificate (index $BIRTH_INDEX)"
 
-REINSTATE_RESULT=$(curl -s -X POST "$STATUS_LIST_API/status/reinstate" \
+REINSTATE_RESULT=$(curl -s -X POST "$ISSUER_PORTAL_API/api/issuers/$PORTAL_ISSUER_ID/status/reinstate" \
   -H "Content-Type: application/json" \
   -d "{\"statusListIndex\": $BIRTH_INDEX}")
 REINSTATE_STATUS=$(echo "$REINSTATE_RESULT" | python3 -c "import json,sys; print(json.load(sys.stdin)['status'])")
 ok "Reinstatement response: $REINSTATE_STATUS"
 
 # Confirm via query
-QUERY_STATUS=$(curl -s "$STATUS_LIST_API/status/query/$BIRTH_INDEX" | python3 -c "import json,sys; print(json.load(sys.stdin)['status'])")
+QUERY_STATUS=$(curl -s -X POST "$ISSUER_PORTAL_API/api/issuers/$PORTAL_ISSUER_ID/status/query" \
+  -H "Content-Type: application/json" \
+  -d "{\"statusListIndex\": $BIRTH_INDEX}" \
+  | python3 -c "import json,sys; print(json.load(sys.stdin)['status'])")
 ok "Query confirms index $BIRTH_INDEX is: $QUERY_STATUS"
 
 step "TEST C: Verify credentials (should PASS — BirthCertificate reinstated)"
@@ -507,7 +532,8 @@ echo "  Issuer:   $ISSUER_DID"
 echo "  Child:    $CHILD_DID (Maria Garcia Lopez)"
 echo "  Parent:   Wallet holder (Ana Lopez Martinez)"
 echo ""
-echo "  Status List:"
+echo "  Status List (per-issuer via Issuer Portal):"
+echo "    Portal issuer ID:                  $PORTAL_ISSUER_ID"
 echo "    BirthCertificate index:            $BIRTH_INDEX"
 echo "    ParentalDelegationCredential index: $DELEG_INDEX"
 echo "    Status list URL:                   $STATUS_LIST_CREDENTIAL_URL"

@@ -1,0 +1,155 @@
+{{define "content"}}
+<h1 class="text-xl sm:text-2xl lg:text-3xl text-gray-900 text-center font-bold mt-2">
+    Credential Verification
+</h1>
+<p class="mt-3 text-gray-500 text-sm">
+    Select the credential types you want to verify, then scan the QR code with a wallet app.
+</p>
+
+{{if .Error}}
+<div class="mt-4 bg-red-50 border border-red-100 rounded-lg p-3 text-left">
+    <p class="text-xs text-red-700">{{.Error}}</p>
+</div>
+{{end}}
+
+<hr class="mt-6 border-gray-100">
+
+{{if .Schemas}}
+<!-- Search bar -->
+<div class="mt-4 mb-4">
+    <input type="text" id="schema-search" placeholder="Search credentials..."
+           oninput="filterSchemas(this.value)"
+           class="w-full px-4 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-400 focus:border-transparent">
+</div>
+
+{{if .HasDelegation}}
+<div class="mb-4 bg-primary-50 border border-primary-100 rounded-lg p-3 text-left">
+    <p class="text-xs text-primary-900">
+        <span class="font-semibold">Delegation credentials detected:</span>
+        When you select a delegation credential, its linked identity credential(s) will be
+        automatically included. The <code class="bg-primary-100 px-1 rounded text-xs">same_subject</code>
+        policy will verify the delegation chain.
+    </p>
+</div>
+{{end}}
+
+<form id="verify-form">
+    <div id="schema-grid" class="grid grid-cols-1 sm:grid-cols-2 gap-3 text-left">
+        {{range .Schemas}}
+        <label class="schema-card cursor-pointer block border border-gray-100 rounded-lg p-4 hover:border-primary-300 hover:bg-primary-50 transition-colors"
+               data-name="{{.DisplayName}}" data-issuer="{{.IssuerName}}" data-type="{{.TypeName}}"
+               data-delegation="{{.IsDelegation}}" data-strategy="{{.SubjectDidStrategy}}">
+            <div class="flex items-start gap-3">
+                <input type="checkbox" name="schema" value="{{.ID}}"
+                       class="mt-1 h-4 w-4 rounded border-gray-300 text-primary-400 focus:ring-primary-400"
+                       onchange="handleSchemaToggle(this)">
+                <div class="flex-1 min-w-0">
+                    <div class="flex items-center gap-2">
+                        <p class="font-semibold text-gray-900 text-sm">{{.DisplayName}}</p>
+                        {{if .IsDelegation}}
+                        <span class="text-xs font-medium px-2 py-0.5 rounded-full bg-amber-50 text-amber-600 border border-amber-200">Delegation</span>
+                        {{end}}
+                    </div>
+                    <p class="text-gray-400 text-xs mt-0.5">by {{.IssuerName}}</p>
+                    {{if .Description}}
+                    <p class="text-gray-500 text-xs mt-1">{{.Description}}</p>
+                    {{end}}
+                    <p class="text-gray-300 text-xs mt-1">{{.FieldCount}} fields</p>
+                </div>
+            </div>
+        </label>
+        {{end}}
+    </div>
+
+    <div class="mt-6" id="verify-action">
+        <button id="verify-btn"
+                type="button"
+                disabled
+                hx-post="/verify"
+                hx-target="#verify-action"
+                hx-swap="outerHTML"
+                hx-include="#verify-form"
+                class="htmx-hide-on-request inline-flex items-center text-sm leading-4 font-medium rounded-full
+                       bg-gray-200 text-gray-400 cursor-not-allowed
+                       px-8 py-2.5 focus:outline-none shadow-sm">
+            Select credentials to verify
+        </button>
+        <div class="htmx-indicator mt-3">
+            <div class="flex items-center justify-center gap-2 text-gray-500 text-sm">
+                <svg class="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+                </svg>
+                Creating verification session...
+            </div>
+        </div>
+    </div>
+</form>
+{{else}}
+<div class="mt-8 text-center py-8">
+    <div class="flex justify-center mb-3">
+        <svg class="w-12 h-12 text-gray-200" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
+                  d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
+        </svg>
+    </div>
+    <p class="text-gray-400 text-sm">No credential types registered yet.</p>
+    <p class="text-gray-300 text-xs mt-1">Create and register schemas in the Issuer Portal first.</p>
+</div>
+{{end}}
+
+<script>
+function handleSchemaToggle(checkbox) {
+    var card = checkbox.closest('.schema-card');
+    var isDelegation = card.getAttribute('data-delegation') === 'true';
+
+    // When a delegation credential is checked, auto-select identity credential only if there's exactly one
+    if (isDelegation && checkbox.checked) {
+        var identityCards = document.querySelectorAll('.schema-card[data-strategy="generate"]');
+        if (identityCards.length === 1) {
+            var cb = identityCards[0].querySelector('input[type="checkbox"]');
+            if (!cb.checked) {
+                cb.checked = true;
+            }
+        }
+    }
+
+    updateVerifyButton();
+}
+
+function updateVerifyButton() {
+    var btn = document.getElementById('verify-btn');
+    var checked = document.querySelectorAll('#verify-form input[name="schema"]:checked');
+    if (checked.length > 0) {
+        btn.disabled = false;
+        btn.className = btn.className
+            .replace('bg-gray-200', 'bg-primary-400')
+            .replace('text-gray-400', 'text-primary-50')
+            .replace('cursor-not-allowed', 'cursor-pointer hover:bg-primary-700');
+        btn.textContent = 'Verify ' + checked.length + ' credential' + (checked.length > 1 ? 's' : '');
+    } else {
+        btn.disabled = true;
+        btn.className = btn.className
+            .replace('bg-primary-400', 'bg-gray-200')
+            .replace('text-primary-50', 'text-gray-400')
+            .replace('cursor-pointer hover:bg-primary-700', 'cursor-not-allowed');
+        btn.textContent = 'Select credentials to verify';
+    }
+}
+
+function filterSchemas(query) {
+    query = query.toLowerCase();
+    var cards = document.querySelectorAll('.schema-card');
+    cards.forEach(function(card) {
+        var name = (card.getAttribute('data-name') || '').toLowerCase();
+        var issuer = (card.getAttribute('data-issuer') || '').toLowerCase();
+        var type = (card.getAttribute('data-type') || '').toLowerCase();
+        if (name.indexOf(query) >= 0 || issuer.indexOf(query) >= 0 || type.indexOf(query) >= 0) {
+            card.style.display = '';
+        } else {
+            card.style.display = 'none';
+        }
+    });
+}
+</script>
+{{end}}

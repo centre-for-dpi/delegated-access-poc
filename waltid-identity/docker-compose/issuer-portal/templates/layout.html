@@ -1,0 +1,136 @@
+{{define "layout"}}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{.Title}} - Issuer Portal</title>
+    <script src="https://unpkg.com/htmx.org@2.0.4"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                colors: {
+                    primary: {
+                        50: '#E6F6FF', 100: '#BAE3FF', 200: '#7CC4FA',
+                        300: '#47A3F3', 400: '#0573F0', 500: '#0A63C9',
+                        600: '#0552B5', 700: '#03449E', 800: '#01337D',
+                        900: '#002159',
+                    },
+                    gray: {
+                        50: '#F5F7FA', 100: '#E4E7EB', 200: '#CBD2D9',
+                        300: '#9AA5B1', 400: '#7B8794', 500: '#616E7C',
+                        600: '#52606D', 700: '#3E4C59', 800: '#323F4B',
+                        900: '#1F2933',
+                    },
+                    green: {
+                        50: '#E1FCF8', 100: '#C1FEF6', 200: '#92FDF2',
+                        300: '#62F4EB', 400: '#3AE7E1', 500: '#1CD4D4',
+                        600: '#0FB5BA', 700: '#099AA4', 800: '#07818F',
+                        900: '#05606E',
+                    },
+                    red: {
+                        50: '#FFE3E3', 100: '#FFBDBD', 200: '#FF9B9B',
+                        300: '#F86A6A', 400: '#EF4E4E', 500: '#E12D39',
+                        600: '#CF1124', 700: '#AB091E', 800: '#8A041A',
+                        900: '#610316',
+                    },
+                    yellow: {
+                        50: '#FFFBEA', 100: '#FFF3C4', 200: '#FCE588',
+                        300: '#FADB5F', 400: '#F7C948', 500: '#F0B429',
+                        600: '#DE911D', 700: '#CB6E17', 800: '#B44D12',
+                        900: '#8D2B0B',
+                    },
+                    white: '#ffffff',
+                    black: '#000000',
+                    transparent: 'transparent',
+                },
+                extend: {
+                    fontFamily: {
+                        sans: ['Inter', 'system-ui', '-apple-system', 'sans-serif'],
+                    },
+                },
+            },
+        }
+    </script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.min.js"></script>
+    <style>
+        .htmx-indicator { display: none; }
+        .htmx-request .htmx-indicator { display: block; }
+        .htmx-request .htmx-hide-on-request { display: none; }
+    </style>
+</head>
+<body class="min-h-screen bg-gray-50 font-sans">
+    <div class="flex flex-col items-center min-h-screen py-8">
+        <!-- walt.id icon + nav -->
+        <div class="w-11/12 sm:w-10/12 lg:w-8/12 xl:w-7/12 mb-6">
+            <div class="flex items-center justify-between">
+                <a href="/" class="flex items-center gap-3">
+                    <svg width="30" height="30" viewBox="0 0 141 141" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <circle cx="70.5" cy="70.5" r="70.5" fill="#0573F0"/>
+                        <rect x="39" y="46" width="30" height="9" fill="#E6F6FF"/>
+                        <path d="M113 75L105 74C100 103 68 103 68 103L67 112C100 113 111 87 113 75Z" fill="#E6F6FF"/>
+                    </svg>
+                    <span class="text-lg font-bold text-gray-900">Issuer Portal</span>
+                </a>
+                <nav class="flex items-center gap-4 text-sm">
+                    <a href="/" class="text-gray-400 hover:text-gray-600">Dashboard</a>
+                    <a href="/issuers/new" class="inline-flex items-center gap-1 text-primary-400 hover:text-primary-500 font-medium">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path>
+                        </svg>
+                        New Issuer
+                    </a>
+                </nav>
+            </div>
+        </div>
+
+        <!-- Main content -->
+        <div class="w-11/12 sm:w-10/12 lg:w-8/12 xl:w-7/12 shadow-2xl rounded-lg pt-8 pb-8 px-10 bg-white">
+            {{block "content" .}}{{end}}
+
+            <!-- Footer -->
+            <div class="flex flex-col items-center mt-10">
+                <div class="flex flex-row gap-2 items-center text-sm text-gray-300">
+                    <p>Secured by walt.id</p>
+                    <svg width="15" height="15" viewBox="0 0 141 141" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <circle cx="70.5" cy="70.5" r="70.5" fill="#CBD2D9"/>
+                        <rect x="39" y="46" width="30" height="9" fill="#52606D"/>
+                        <path d="M113 75L105 74C100 103 68 103 68 103L67 112C100 113 111 87 113 75Z" fill="#52606D"/>
+                    </svg>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast container -->
+    <div id="toast" class="hidden fixed top-6 right-6 max-w-sm rounded-lg shadow-lg border px-5 py-4 text-sm z-50"></div>
+
+    <script>
+    function showToast(message, color) {
+        const toast = document.getElementById('toast');
+        const colors = {
+            green: 'bg-green-50 border-green-100 text-green-900',
+            red: 'bg-red-50 border-red-100 text-red-600',
+        };
+        toast.className = 'fixed top-6 right-6 max-w-sm rounded-lg shadow-lg border px-5 py-4 text-sm z-50 ' + (colors[color] || colors.green);
+        toast.textContent = message;
+        toast.classList.remove('hidden');
+        setTimeout(() => toast.classList.add('hidden'), 4000);
+    }
+
+    // Listen for toast events from HTMX responses
+    document.body.addEventListener('htmx:afterSwap', function(evt) {
+        const toastEl = evt.detail.target.querySelector('[data-toast]');
+        if (toastEl) {
+            showToast(toastEl.dataset.toastMessage, toastEl.dataset.toastColor);
+            toastEl.remove();
+        }
+    });
+    </script>
+</body>
+</html>
+{{end}}

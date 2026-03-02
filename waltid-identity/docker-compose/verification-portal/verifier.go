@@ -1,12 +1,10 @@
 package main
 
 import (
-	"bytes"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
-	"log"
 	"net/http"
 	"net/url"
 	"regexp"
@@ -23,7 +21,7 @@ type SchemaField struct {
 	Nested []SchemaField `json:"nested,omitempty"`
 }
 
-// SchemaInfo holds metadata about a registered credential schema.
+// SchemaInfo represents a credential schema fetched from the issuer portal registry.
 type SchemaInfo struct {
 	ID                 string        `json:"id"`
 	IssuerID           string        `json:"issuerId"`
@@ -34,42 +32,19 @@ type SchemaInfo struct {
 	Fields             []SchemaField `json:"fields"`
 	FieldCount         int           `json:"fieldCount"`
 	SubjectDidStrategy string        `json:"subjectDidStrategy"`
+	IsDelegation       bool          `json:"-"` // computed, not from JSON
 }
 
 // SchemaAnalysis holds the result of analyzing schemas for delegation relationships.
 type SchemaAnalysis struct {
 	IdentitySchemas   []SchemaInfo
 	DelegationSchemas []SchemaInfo
-	DidRefPaths       map[string][]string // typeName → list of JSON paths to did_ref fields
+	OtherSchemas      []SchemaInfo            // schemas that are neither identity nor delegation
+	DidRefPaths       map[string][]string     // typeName → list of JSON paths to did_ref fields
 	HasDelegation     bool
 }
 
-// FetchSchemas retrieves all registered schemas from the issuer-portal API.
-func FetchSchemas(cfg Config) ([]SchemaInfo, error) {
-	resp, err := httpClient.Get(cfg.IssuerPortalURL + "/api/schemas")
-	if err != nil {
-		return nil, fmt.Errorf("fetching schemas: %w", err)
-	}
-	defer resp.Body.Close()
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("reading schema response: %w", err)
-	}
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("schema API returned %d: %s", resp.StatusCode, string(body))
-	}
-
-	var schemas []SchemaInfo
-	if err := json.Unmarshal(body, &schemas); err != nil {
-		return nil, fmt.Errorf("decoding schemas: %w", err)
-	}
-	return schemas, nil
-}
-
 // findDidRefPaths recursively finds fields of type "did_ref" and returns their JSON paths.
-// For a nested field like onBehalfOf (object) → id (did_ref), returns ["onBehalfOf.id"].
 func findDidRefPaths(fields []SchemaField, prefix string) []string {
 	var paths []string
 	for _, f := range fields {
@@ -87,55 +62,87 @@ func findDidRefPaths(fields []SchemaField, prefix string) []string {
 	return paths
 }
 
-// AnalyzeSchemas classifies schemas into identity credentials and delegation credentials.
-// Identity schemas have SubjectDidStrategy=="generate" (their subject DID is meaningful).
-// Delegation schemas have at least one did_ref field (they reference another credential's DID).
+// AnalyzeSchemas classifies schemas into identity, delegation, and other categories.
 func AnalyzeSchemas(schemas []SchemaInfo) SchemaAnalysis {
 	analysis := SchemaAnalysis{
 		DidRefPaths: make(map[string][]string),
 	}
 
-	for _, s := range schemas {
-		paths := findDidRefPaths(s.Fields, "")
+	for i := range schemas {
+		paths := findDidRefPaths(schemas[i].Fields, "")
 		if len(paths) > 0 {
-			analysis.DelegationSchemas = append(analysis.DelegationSchemas, s)
-			analysis.DidRefPaths[s.TypeName] = paths
+			schemas[i].IsDelegation = true
+			analysis.DelegationSchemas = append(analysis.DelegationSchemas, schemas[i])
+			analysis.DidRefPaths[schemas[i].TypeName] = paths
 			analysis.HasDelegation = true
-		}
-		if s.SubjectDidStrategy == "generate" {
-			analysis.IdentitySchemas = append(analysis.IdentitySchemas, s)
+		} else if schemas[i].SubjectDidStrategy == "generate" {
+			analysis.IdentitySchemas = append(analysis.IdentitySchemas, schemas[i])
+		} else {
+			analysis.OtherSchemas = append(analysis.OtherSchemas, schemas[i])
 		}
 	}
 
 	return analysis
 }
 
-// BuildVerificationRequest constructs the OID4VP verification request body dynamically
-// based on discovered identity and delegation schemas.
-func BuildVerificationRequest(analysis SchemaAnalysis) map[string]any {
+// AnalyzeSelectedSchemas runs analysis on a subset of selected schemas.
+func AnalyzeSelectedSchemas(selected []SchemaInfo) SchemaAnalysis {
+	return AnalyzeSchemas(selected)
+}
+
+// FetchSchemas retrieves all registered credential schemas from the issuer portal.
+func FetchSchemas(cfg Config) ([]SchemaInfo, error) {
+	resp, err := httpClient.Get(cfg.IssuerPortalURL + "/api/schemas")
+	if err != nil {
+		return nil, fmt.Errorf("fetching schemas: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("issuer portal returned %d: %s", resp.StatusCode, string(body))
+	}
+
+	var schemas []SchemaInfo
+	if err := json.NewDecoder(resp.Body).Decode(&schemas); err != nil {
+		return nil, fmt.Errorf("decoding schemas: %w", err)
+	}
+	return schemas, nil
+}
+
+// BuildVerificationRequest constructs the verifier API request body for the selected schemas,
+// dynamically adding same_subject constraints when delegation credentials are present.
+func BuildVerificationRequest(schemas []SchemaInfo) map[string]any {
+	analysis := AnalyzeSelectedSchemas(schemas)
+
 	var requestCredentials []map[string]any
 
 	// Track field IDs for identity schemas (used in same_subject linking)
 	identityFieldIDs := make(map[string]string) // typeName → field_id
 
-	// Add identity schemas first
+	// Add identity schemas first (with subject ID field for same_subject linking)
 	for _, s := range analysis.IdentitySchemas {
 		fieldID := fmt.Sprintf("subject_id_%s", strings.ToLower(s.TypeName))
 		identityFieldIDs[s.TypeName] = fieldID
 
+		fields := []map[string]any{
+			{"path": []string{"$.vc.type"}, "filter": map[string]any{"type": "string", "pattern": s.TypeName}},
+		}
+		// Only add subject ID field if there are delegation schemas that need it
+		if analysis.HasDelegation {
+			fields = append(fields, map[string]any{
+				"id": fieldID, "path": []string{"$.vc.credentialSubject.id"},
+			})
+		}
+
 		requestCredentials = append(requestCredentials, map[string]any{
 			"format": "jwt_vc_json",
 			"input_descriptor": map[string]any{
-				"id":      strings.ToLower(s.TypeName),
-				"name":    s.DisplayName,
-				"purpose": fmt.Sprintf("Verify %s", s.DisplayName),
-				"format":  map[string]any{"jwt_vc_json": map[string]any{"alg": []string{"EdDSA"}}},
-				"constraints": map[string]any{
-					"fields": []map[string]any{
-						{"path": []string{"$.vc.type"}, "filter": map[string]any{"type": "string", "pattern": s.TypeName}},
-						{"id": fieldID, "path": []string{"$.vc.credentialSubject.id"}},
-					},
-				},
+				"id":          strings.ToLower(s.TypeName),
+				"name":        s.DisplayName,
+				"purpose":     "Verify " + s.DisplayName,
+				"format":      map[string]any{"jwt_vc_json": map[string]any{"alg": []string{"EdDSA"}}},
+				"constraints": map[string]any{"fields": fields},
 			},
 		})
 	}
@@ -144,25 +151,20 @@ func BuildVerificationRequest(analysis SchemaAnalysis) map[string]any {
 	for _, s := range analysis.DelegationSchemas {
 		paths := analysis.DidRefPaths[s.TypeName]
 
-		var fields []map[string]any
-		fields = append(fields, map[string]any{
-			"path":   []string{"$.vc.type"},
-			"filter": map[string]any{"type": "string", "pattern": s.TypeName},
-		})
+		fields := []map[string]any{
+			{"path": []string{"$.vc.type"}, "filter": map[string]any{"type": "string", "pattern": s.TypeName}},
+		}
 
 		var sameSubjectEntries []map[string]any
 
 		for _, path := range paths {
-			// Convert dot path (e.g., "onBehalfOf.id") to JSONPath (e.g., "$.vc.credentialSubject.onBehalfOf.id")
 			jsonPath := "$.vc.credentialSubject." + path
 			refFieldID := fmt.Sprintf("ref_%s_%s", strings.ToLower(s.TypeName), strings.ReplaceAll(path, ".", "_"))
 
 			fields = append(fields, map[string]any{
-				"id":   refFieldID,
-				"path": []string{jsonPath},
+				"id": refFieldID, "path": []string{jsonPath},
 			})
 
-			// Link to each identity schema's subject ID
 			for _, identityFieldID := range identityFieldIDs {
 				sameSubjectEntries = append(sameSubjectEntries, map[string]any{
 					"field_id":  []string{identityFieldID, refFieldID},
@@ -171,9 +173,7 @@ func BuildVerificationRequest(analysis SchemaAnalysis) map[string]any {
 			}
 		}
 
-		constraints := map[string]any{
-			"fields": fields,
-		}
+		constraints := map[string]any{"fields": fields}
 		if len(sameSubjectEntries) > 0 {
 			constraints["same_subject"] = sameSubjectEntries
 		}
@@ -183,9 +183,27 @@ func BuildVerificationRequest(analysis SchemaAnalysis) map[string]any {
 			"input_descriptor": map[string]any{
 				"id":          strings.ToLower(s.TypeName),
 				"name":        s.DisplayName,
-				"purpose":     fmt.Sprintf("Verify delegated authority via %s", s.DisplayName),
+				"purpose":     "Verify delegated authority via " + s.DisplayName,
 				"format":      map[string]any{"jwt_vc_json": map[string]any{"alg": []string{"EdDSA"}}},
 				"constraints": constraints,
+			},
+		})
+	}
+
+	// Add other schemas (no special constraints)
+	for _, s := range analysis.OtherSchemas {
+		requestCredentials = append(requestCredentials, map[string]any{
+			"format": "jwt_vc_json",
+			"input_descriptor": map[string]any{
+				"id":      strings.ToLower(s.TypeName),
+				"name":    s.DisplayName,
+				"purpose": "Verify " + s.DisplayName,
+				"format":  map[string]any{"jwt_vc_json": map[string]any{"alg": []string{"EdDSA"}}},
+				"constraints": map[string]any{
+					"fields": []map[string]any{
+						{"path": []string{"$.vc.type"}, "filter": map[string]any{"type": "string", "pattern": s.TypeName}},
+					},
+				},
 			},
 		})
 	}
@@ -208,19 +226,18 @@ func BuildVerificationRequest(analysis SchemaAnalysis) map[string]any {
 	}
 }
 
-// CreateVerificationRequest builds and sends a dynamic verification request to the verifier API.
-func CreateVerificationRequest(cfg Config, analysis SchemaAnalysis) (string, error) {
-	reqBody := BuildVerificationRequest(analysis)
+// CreateVerificationRequest sends a verification request to the verifier API
+// and returns the openid4vp:// URL.
+func CreateVerificationRequest(cfg Config, schemas []SchemaInfo) (string, error) {
+	reqURL := cfg.VerifierAPIURL + "/openid4vc/verify"
 
-	jsonBody, err := json.Marshal(reqBody)
+	body := BuildVerificationRequest(schemas)
+	bodyJSON, err := json.Marshal(body)
 	if err != nil {
-		return "", fmt.Errorf("marshalling request: %w", err)
+		return "", fmt.Errorf("marshaling request: %w", err)
 	}
 
-	log.Printf("Verification request: %s", string(jsonBody))
-
-	reqURL := cfg.VerifierAPIURL + "/openid4vc/verify"
-	req, err := http.NewRequest("POST", reqURL, bytes.NewReader(jsonBody))
+	req, err := http.NewRequest("POST", reqURL, strings.NewReader(string(bodyJSON)))
 	if err != nil {
 		return "", fmt.Errorf("creating request: %w", err)
 	}
@@ -234,16 +251,16 @@ func CreateVerificationRequest(cfg Config, analysis SchemaAnalysis) (string, err
 	}
 	defer resp.Body.Close()
 
-	body, err := io.ReadAll(resp.Body)
+	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return "", fmt.Errorf("reading response: %w", err)
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("verifier returned %d: %s", resp.StatusCode, string(body))
+		return "", fmt.Errorf("verifier returned %d: %s", resp.StatusCode, string(respBody))
 	}
 
-	return string(body), nil
+	return string(respBody), nil
 }
 
 type tokenResponse struct {
@@ -331,7 +348,7 @@ func parseJWTPayload(jwt string) (map[string]any, error) {
 
 var camelCaseRe = regexp.MustCompile(`([a-z0-9])([A-Z])`)
 
-// camelToTitle converts "BirthCertificate" to "Birth Certificate", "firstName" to "First Name"
+// camelToTitle converts "BirthCertificate" to "Birth Certificate"
 func camelToTitle(s string) string {
 	spaced := camelCaseRe.ReplaceAllString(s, "${1} ${2}")
 	if len(spaced) > 0 {
@@ -342,7 +359,6 @@ func camelToTitle(s string) string {
 
 // extractCredentials parses the vp_token JWT to extract presented VCs.
 func extractCredentials(vpTokenRaw json.RawMessage) []Credential {
-	// vp_token is a JWT string
 	var vpTokenStr string
 	if err := json.Unmarshal(vpTokenRaw, &vpTokenStr); err != nil {
 		return nil
@@ -353,7 +369,6 @@ func extractCredentials(vpTokenRaw json.RawMessage) []Credential {
 		return nil
 	}
 
-	// Get vp.verifiableCredential array
 	vp, ok := vpPayload["vp"].(map[string]any)
 	if !ok {
 		return nil
@@ -381,7 +396,6 @@ func extractCredentials(vpTokenRaw json.RawMessage) []Credential {
 
 		cred := buildCredential(vc)
 
-		// Pretty-print the VC JSON for detail view
 		vcJSON, _ := json.MarshalIndent(vc, "", "  ")
 		cred.RawJSON = string(vcJSON)
 
@@ -393,14 +407,12 @@ func extractCredentials(vpTokenRaw json.RawMessage) []Credential {
 func buildCredential(vc map[string]any) Credential {
 	cred := Credential{}
 
-	// Extract type
 	if types, ok := vc["type"].([]any); ok && len(types) > 0 {
 		lastType := fmt.Sprintf("%v", types[len(types)-1])
 		cred.Type = lastType
 		cred.Title = camelToTitle(lastType)
 	}
 
-	// Extract credentialSubject fields
 	subj, ok := vc["credentialSubject"].(map[string]any)
 	if !ok {
 		return cred
@@ -410,11 +422,9 @@ func buildCredential(vc map[string]any) Credential {
 	return cred
 }
 
-// flattenSubject recursively extracts key-value pairs from the credential subject.
 func flattenSubject(prefix string, obj map[string]any) []CredentialField {
 	var fields []CredentialField
 	for key, val := range obj {
-		// Skip raw DID id fields — they're long and not human-readable
 		if key == "id" && prefix == "" {
 			continue
 		}
@@ -425,7 +435,6 @@ func flattenSubject(prefix string, obj map[string]any) []CredentialField {
 		switch v := val.(type) {
 		case string:
 			if strings.HasPrefix(v, "did:") && len(v) > 30 {
-				// Truncate long DIDs for display
 				v = v[:25] + "..."
 			}
 			fields = append(fields, CredentialField{Key: label, Value: v})

@@ -1,0 +1,90 @@
+{{define "layout"}}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{.Title}} - walt.id</title>
+    <script src="https://unpkg.com/htmx.org@2.0.4"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                colors: {
+                    primary: {
+                        50: '#E6F6FF', 100: '#BAE3FF', 200: '#7CC4FA',
+                        300: '#47A3F3', 400: '#0573F0', 500: '#0A63C9',
+                        600: '#0552B5', 700: '#03449E', 800: '#01337D',
+                        900: '#002159',
+                    },
+                    gray: {
+                        50: '#F5F7FA', 100: '#E4E7EB', 200: '#CBD2D9',
+                        300: '#9AA5B1', 400: '#7B8794', 500: '#616E7C',
+                        600: '#52606D', 700: '#3E4C59', 800: '#323F4B',
+                        900: '#1F2933',
+                    },
+                    green: {
+                        50: '#E1FCF8', 100: '#C1FEF6', 200: '#92FDF2',
+                        300: '#62F4EB', 400: '#3AE7E1', 500: '#1CD4D4',
+                        600: '#0FB5BA', 700: '#099AA4', 800: '#07818F',
+                        900: '#05606E',
+                    },
+                    red: {
+                        50: '#FFE3E3', 100: '#FFBDBD', 200: '#FF9B9B',
+                        300: '#F86A6A', 400: '#EF4E4E', 500: '#E12D39',
+                        600: '#CF1124', 700: '#AB091E', 800: '#8A041A',
+                        900: '#610316',
+                    },
+                    white: '#ffffff',
+                    black: '#000000',
+                    transparent: 'transparent',
+                },
+                extend: {
+                    fontFamily: {
+                        sans: ['Inter', 'system-ui', '-apple-system', 'sans-serif'],
+                    },
+                },
+            },
+        }
+    </script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.min.js"></script>
+    <style>
+        .htmx-indicator { display: none; }
+        .htmx-request .htmx-indicator { display: block; }
+        .htmx-request .htmx-hide-on-request { display: none; }
+    </style>
+</head>
+<body class="min-h-screen bg-gray-50 font-sans">
+    <div class="flex flex-col justify-center items-center min-h-screen py-8">
+        <!-- walt.id icon -->
+        <div class="my-5 flex flex-row justify-center">
+            <svg width="35" height="35" viewBox="0 0 141 141" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <circle cx="70.5" cy="70.5" r="70.5" fill="#0573F0"/>
+                <rect x="39" y="46" width="30" height="9" fill="#E6F6FF"/>
+                <path d="M113 75L105 74C100 103 68 103 68 103L67 112C100 113 111 87 113 75Z" fill="#E6F6FF"/>
+            </svg>
+        </div>
+
+        <!-- Main card -->
+        <div class="relative w-10/12 sm:w-7/12 lg:w-6/12 text-center shadow-2xl rounded-lg pt-8 pb-8 px-10 bg-white">
+            {{block "content" .}}{{end}}
+
+            <!-- Footer -->
+            <div class="flex flex-col items-center mt-12">
+                <div class="flex flex-row gap-2 items-center text-sm text-gray-500">
+                    <p>Secured by walt.id</p>
+                    <svg width="15" height="15" viewBox="0 0 141 141" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <circle cx="70.5" cy="70.5" r="70.5" fill="#CBD2D9"/>
+                        <rect x="39" y="46" width="30" height="9" fill="#52606D"/>
+                        <path d="M113 75L105 74C100 103 68 103 68 103L67 112C100 113 111 87 113 75Z" fill="#52606D"/>
+                    </svg>
+                </div>
+            </div>
+        </div>
+    </div>
+</body>
+</html>
+{{end}}

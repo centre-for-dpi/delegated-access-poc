@@ -1,0 +1,4 @@
+{{define "toast.html"}}
+<div data-toast data-toast-message="{{.Message}}" data-toast-color="{{.Color}}"></div>
+<script>showToast('{{.Message}}', '{{.Color}}');</script>
+{{end}}

@@ -1,0 +1,234 @@
+{{define "content"}}
+<div class="flex items-center gap-2 mb-1">
+    <a href="/" class="text-gray-300 hover:text-gray-500 text-sm">Dashboard</a>
+    <svg class="w-3 h-3 text-gray-200" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path>
+    </svg>
+    <a href="/issuers/{{.Issuer.ID}}" class="text-gray-300 hover:text-gray-500 text-sm">{{.Issuer.Name}}</a>
+    <svg class="w-3 h-3 text-gray-200" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path>
+    </svg>
+    <span class="text-sm text-gray-500">New Schema</span>
+</div>
+
+<h1 class="text-xl sm:text-2xl font-bold text-gray-900 mb-1">Design Credential Schema</h1>
+<p class="text-gray-400 text-sm mb-6">Define a new W3C Verifiable Credential type</p>
+
+<hr class="mb-6 border-gray-100">
+
+{{if .Error}}
+<div class="mb-6 bg-red-50 border border-red-100 rounded-lg p-4 text-sm text-red-600">{{.Error}}</div>
+{{end}}
+
+<form id="schema-form" method="POST" action="/issuers/{{.Issuer.ID}}/schemas" class="space-y-5">
+
+    <div class="grid grid-cols-2 gap-4">
+        <div>
+            <label class="block text-xs font-medium text-gray-500 mb-1">Type Name (PascalCase)</label>
+            <input type="text" name="typeName" required placeholder="e.g., BirthCertificate"
+                   pattern="^[A-Z][a-zA-Z0-9]*$"
+                   class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-900
+                          focus:outline-none focus:ring-2 focus:ring-primary-200 focus:border-primary-400">
+        </div>
+        <div>
+            <label class="block text-xs font-medium text-gray-500 mb-1">Display Name</label>
+            <input type="text" name="displayName" required placeholder="e.g., Birth Certificate"
+                   class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-900
+                          focus:outline-none focus:ring-2 focus:ring-primary-200 focus:border-primary-400">
+        </div>
+    </div>
+
+    <div>
+        <label class="block text-xs font-medium text-gray-500 mb-1">Description</label>
+        <input type="text" name="description" placeholder="Brief description of this credential type"
+               class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-900
+                      focus:outline-none focus:ring-2 focus:ring-primary-200 focus:border-primary-400">
+    </div>
+
+    <div>
+        <label class="block text-xs font-medium text-gray-500 mb-2">Credential Subject DID Strategy</label>
+        <div class="flex gap-4">
+            <label class="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
+                <input type="radio" name="subjectDidStrategy" value="generate" checked
+                       class="text-primary-400 focus:ring-primary-200">
+                <span>Generate new DID for subject</span>
+            </label>
+            <label class="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
+                <input type="radio" name="subjectDidStrategy" value="wallet"
+                       class="text-primary-400 focus:ring-primary-200">
+                <span>Use wallet holder's DID</span>
+            </label>
+        </div>
+        <p class="text-xs text-gray-300 mt-1">
+            "Generate" assigns a did:key at issuance (e.g., for a child). "Wallet" uses the credential holder's DID.
+        </p>
+    </div>
+
+    <hr class="border-gray-100">
+
+    <!-- Fields section -->
+    <div>
+        <div class="flex items-center justify-between mb-3">
+            <label class="text-xs font-semibold text-gray-400 uppercase tracking-wider">Credential Subject Fields</label>
+        </div>
+
+        <div id="fields-container" class="space-y-3">
+            <!-- Field rows will be added here -->
+        </div>
+
+        <button type="button" onclick="addField()"
+                class="mt-3 inline-flex items-center gap-1 text-xs font-medium text-primary-400 hover:text-primary-500">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path>
+            </svg>
+            Add Field
+        </button>
+    </div>
+
+    <!-- JSON Preview -->
+    <div>
+        <label class="block text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">JSON Preview</label>
+        <div id="json-preview"
+             hx-post="/issuers/{{.Issuer.ID}}/schemas/preview"
+             hx-trigger="input changed delay:500ms from:#schema-form"
+             hx-include="#schema-form"
+             hx-target="#json-preview"
+             hx-swap="innerHTML"
+             class="bg-gray-50 rounded-lg p-4 overflow-x-auto">
+            <pre class="text-xs text-gray-400 font-mono whitespace-pre-wrap">Design your schema to see a preview...</pre>
+        </div>
+    </div>
+
+    <div class="flex justify-end gap-3">
+        <a href="/issuers/{{.Issuer.ID}}/schemas"
+           class="px-6 py-2 text-sm font-medium rounded-full bg-gray-100 hover:bg-gray-200 text-gray-600">Cancel</a>
+        <button type="submit"
+                class="inline-flex items-center gap-2 text-sm font-medium rounded-full bg-primary-400 hover:bg-primary-500 text-white px-6 py-2.5 shadow-sm">
+            Create Schema
+        </button>
+    </div>
+</form>
+
+<script>
+let fieldCount = 0;
+
+function addField() {
+    const container = document.getElementById('fields-container');
+    const idx = fieldCount++;
+
+    const row = document.createElement('div');
+    row.className = 'border border-gray-100 rounded-lg p-3';
+    row.id = 'field-' + idx;
+    row.innerHTML = `
+        <div class="flex items-start gap-2">
+            <div class="flex-1 grid grid-cols-4 gap-2">
+                <div>
+                    <label class="block text-xs text-gray-400 mb-0.5">Field Name (camelCase)</label>
+                    <input type="text" name="field_name_${idx}" required placeholder="e.g., firstName"
+                           class="w-full border border-gray-200 rounded px-2 py-1.5 text-xs text-gray-900
+                                  focus:outline-none focus:ring-1 focus:ring-primary-200">
+                </div>
+                <div>
+                    <label class="block text-xs text-gray-400 mb-0.5">Label</label>
+                    <input type="text" name="field_label_${idx}" placeholder="e.g., First Name"
+                           class="w-full border border-gray-200 rounded px-2 py-1.5 text-xs text-gray-900
+                                  focus:outline-none focus:ring-1 focus:ring-primary-200">
+                </div>
+                <div>
+                    <label class="block text-xs text-gray-400 mb-0.5">Type</label>
+                    <select name="field_type_${idx}" onchange="toggleNested(${idx}, this.value)"
+                            class="w-full border border-gray-200 rounded px-2 py-1.5 text-xs text-gray-900
+                                   focus:outline-none focus:ring-1 focus:ring-primary-200">
+                        <option value="string">String</option>
+                        <option value="date">Date</option>
+                        <option value="number">Number</option>
+                        <option value="boolean">Boolean</option>
+                        <option value="did_ref">DID Reference</option>
+                        <option value="object">Object (nested)</option>
+                    </select>
+                </div>
+                <div class="flex items-end gap-2">
+                    <label class="flex items-center gap-1 text-xs text-gray-500 cursor-pointer pb-1.5">
+                        <input type="checkbox" name="field_required_${idx}" class="rounded">
+                        Req
+                    </label>
+                    <button type="button" onclick="removeField(${idx})"
+                            class="text-gray-300 hover:text-red-400 pb-1">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                        </svg>
+                    </button>
+                </div>
+            </div>
+        </div>
+        <div id="nested-${idx}" class="hidden mt-2 ml-6 space-y-2">
+            <input type="hidden" name="field_nested_count_${idx}" id="nested-count-${idx}" value="0">
+            <div id="nested-fields-${idx}" class="space-y-2"></div>
+            <button type="button" onclick="addNestedField(${idx})"
+                    class="inline-flex items-center gap-1 text-xs text-primary-400 hover:text-primary-500">
+                <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path>
+                </svg>
+                Add Nested Field
+            </button>
+        </div>
+    `;
+    container.appendChild(row);
+    htmx.process(row);
+}
+
+function removeField(idx) {
+    const el = document.getElementById('field-' + idx);
+    if (el) el.remove();
+}
+
+function toggleNested(idx, type) {
+    const nested = document.getElementById('nested-' + idx);
+    if (type === 'object') {
+        nested.classList.remove('hidden');
+    } else {
+        nested.classList.add('hidden');
+    }
+}
+
+let nestedCounts = {};
+function addNestedField(parentIdx) {
+    if (!nestedCounts[parentIdx]) nestedCounts[parentIdx] = 0;
+    const nIdx = nestedCounts[parentIdx]++;
+    document.getElementById('nested-count-' + parentIdx).value = nestedCounts[parentIdx];
+
+    const container = document.getElementById('nested-fields-' + parentIdx);
+    const row = document.createElement('div');
+    row.className = 'grid grid-cols-3 gap-2';
+    row.id = 'nested-' + parentIdx + '-' + nIdx;
+    row.innerHTML = `
+        <input type="text" name="field_name_${parentIdx}_${nIdx}" placeholder="fieldName"
+               class="border border-gray-200 rounded px-2 py-1 text-xs text-gray-900
+                      focus:outline-none focus:ring-1 focus:ring-primary-200">
+        <input type="text" name="field_label_${parentIdx}_${nIdx}" placeholder="Label"
+               class="border border-gray-200 rounded px-2 py-1 text-xs text-gray-900
+                      focus:outline-none focus:ring-1 focus:ring-primary-200">
+        <div class="flex gap-1">
+            <select name="field_type_${parentIdx}_${nIdx}"
+                    class="flex-1 border border-gray-200 rounded px-2 py-1 text-xs text-gray-900
+                           focus:outline-none focus:ring-1 focus:ring-primary-200">
+                <option value="string">String</option>
+                <option value="date">Date</option>
+                <option value="number">Number</option>
+                <option value="did_ref">DID Reference</option>
+            </select>
+            <button type="button" onclick="document.getElementById('nested-${parentIdx}-${nIdx}').remove()"
+                    class="text-gray-300 hover:text-red-400">
+                <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                </svg>
+            </button>
+        </div>
+    `;
+    container.appendChild(row);
+}
+
+// Start with one field
+addField();
+</script>
+{{end}}

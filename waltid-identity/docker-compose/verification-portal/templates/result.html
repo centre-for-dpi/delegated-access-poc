@@ -1,0 +1,129 @@
+{{define "content"}}
+{{if .Error}}
+<div class="text-center py-4">
+    <div class="flex justify-center mb-3">
+        <div class="w-12 h-12 rounded-full bg-red-50 flex items-center justify-center">
+            <svg class="w-6 h-6 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                      d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 16.5c-.77.833.192 2.5 1.732 2.5z"></path>
+            </svg>
+        </div>
+    </div>
+    <p class="text-red-500 text-sm font-medium">{{.Error}}</p>
+    <div class="mt-4">
+        <a href="/" class="text-primary-400 underline text-sm hover:text-primary-700">Back to start</a>
+    </div>
+</div>
+{{else}}
+
+{{if .Success}}
+<div class="flex justify-center mb-2">
+    <div class="w-12 h-12 rounded-full bg-green-50 flex items-center justify-center">
+        <svg class="w-6 h-6 text-green-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+        </svg>
+    </div>
+</div>
+<h2 class="text-xl font-bold text-gray-900 mb-1 text-center">Credentials Verified</h2>
+<p class="text-gray-500 text-xs mb-6 text-center">
+    All presented credentials passed verification policies.
+</p>
+{{else}}
+<div class="flex justify-center mb-2">
+    <div class="w-12 h-12 rounded-full bg-red-50 flex items-center justify-center">
+        <svg class="w-6 h-6 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+        </svg>
+    </div>
+</div>
+<h2 class="text-xl font-bold text-gray-900 mb-1 text-center">Verification Failed</h2>
+<p class="text-gray-500 text-xs mb-6 text-center">
+    One or more credentials did not pass all validation policies.
+</p>
+{{end}}
+
+{{if .Credentials}}
+<div class="flex flex-col items-center gap-4 mb-6">
+    {{range .Credentials}}
+    <div class="group w-full max-w-[380px] h-[210px]" style="perspective:1000px">
+        <div class="relative h-full w-full rounded-xl shadow-lg transition-all duration-500"
+             style="transform-style:preserve-3d"
+             onmouseenter="this.style.transform='rotateY(180deg)'"
+             onmouseleave="this.style.transform='rotateY(0deg)'">
+            {{if .Failed}}
+            <div class="absolute inset-0 rounded-xl bg-gradient-to-r from-red-700 to-red-900 p-5 text-white"
+                 style="backface-visibility:hidden">
+            {{else}}
+            <div class="absolute inset-0 rounded-xl bg-gradient-to-r from-green-700 to-green-900 p-5 text-white"
+                 style="backface-visibility:hidden">
+            {{end}}
+                <div class="flex items-start">
+                    <svg width="24" height="24" viewBox="0 0 141 141" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <circle cx="70.5" cy="70.5" r="70.5" fill="rgba(255,255,255,0.2)"/>
+                        <rect x="39" y="46" width="30" height="9" fill="rgba(255,255,255,0.8)"/>
+                        <path d="M113 75L105 74C100 103 68 103 68 103L67 112C100 113 111 87 113 75Z" fill="rgba(255,255,255,0.8)"/>
+                    </svg>
+                </div>
+                <h3 class="mt-8 text-2xl font-bold">{{.Title}}</h3>
+                {{if .Failed}}
+                <p class="mt-1 text-sm text-red-200 opacity-80">Failed</p>
+                {{else}}
+                <p class="mt-1 text-sm text-green-200 opacity-80">Verified</p>
+                {{end}}
+            </div>
+            <div class="absolute inset-0 rounded-xl bg-white p-4 overflow-y-auto shadow-lg"
+                 style="backface-visibility:hidden;transform:rotateY(180deg)">
+                <p class="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">{{.Title}}</p>
+                <div class="space-y-1.5">
+                    {{range .Fields}}
+                    <div class="flex justify-between text-xs gap-2">
+                        <span class="text-gray-400 flex-shrink-0">{{.Key}}</span>
+                        <span class="text-gray-900 text-right truncate" title="{{.Value}}">{{.Value}}</span>
+                    </div>
+                    {{end}}
+                </div>
+            </div>
+        </div>
+    </div>
+    {{end}}
+</div>
+{{end}}
+
+<div class="text-left">
+    <p class="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Verification Policies</p>
+    {{range .PolicyResults.Results}}
+    <div class="mb-2">
+        <p class="text-xs text-gray-400 mb-1">{{.Credential}}</p>
+        {{range .PolicyResults}}
+        <div class="flex items-center gap-2 py-0.5">
+            {{if .IsSuccess}}
+            <svg class="w-4 h-4 text-green-700 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+            </svg>
+            {{else}}
+            <svg class="w-4 h-4 text-red-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+            </svg>
+            {{end}}
+            <span class="text-xs text-gray-900">{{formatPolicyName .Policy}}</span>
+        </div>
+        {{end}}
+    </div>
+    {{end}}
+</div>
+
+<div class="mt-2 text-gray-400 text-xs text-center">
+    Policies run: {{.PolicyResults.PoliciesRun}} &middot; {{.PolicyResults.Time}}
+</div>
+
+<div class="mt-5 text-center">
+    <a href="/"
+       class="inline-flex items-center text-sm leading-4 font-medium rounded-full
+              bg-gray-200 hover:bg-gray-300 text-gray-500
+              px-8 py-2.5 focus:outline-none shadow-sm no-underline">
+        {{if .Success}}New Verification{{else}}Try Again{{end}}
+    </a>
+</div>
+
+{{end}}
+{{end}}

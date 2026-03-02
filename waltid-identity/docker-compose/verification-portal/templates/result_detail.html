@@ -1,5 +1,6 @@
-{{define "result_success.html"}}
+{{define "result_detail.html"}}
 <div>
+    {{if .OverallSuccess}}
     <!-- Success header -->
     <div class="flex justify-center mb-2">
         <div class="w-12 h-12 rounded-full bg-green-50 flex items-center justify-center">
@@ -8,12 +9,26 @@
             </svg>
         </div>
     </div>
-    <h2 class="text-xl font-bold text-gray-900 mb-1 text-center">Presented Credentials</h2>
+    <h2 class="text-xl font-bold text-gray-900 mb-1 text-center">Credentials Verified</h2>
     <p class="text-gray-500 text-xs mb-6 text-center">
-        All credentials were verified successfully.
+        All presented credentials passed verification policies.
     </p>
+    {{else}}
+    <!-- Failure header -->
+    <div class="flex justify-center mb-2">
+        <div class="w-12 h-12 rounded-full bg-red-50 flex items-center justify-center">
+            <svg class="w-6 h-6 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+            </svg>
+        </div>
+    </div>
+    <h2 class="text-xl font-bold text-gray-900 mb-1 text-center">Verification Failed</h2>
+    <p class="text-gray-500 text-xs mb-6 text-center">
+        One or more credentials did not pass all validation policies.
+    </p>
+    {{end}}
 
-    <!-- Credential cards -->
+    <!-- Credential cards - colored per credential -->
     {{if .Credentials}}
     <div class="flex flex-col items-center gap-4 mb-6">
         {{range .Credentials}}
@@ -23,8 +38,13 @@
                  onmouseenter="this.style.transform='rotateY(180deg)'"
                  onmouseleave="this.style.transform='rotateY(0deg)'">
                 <!-- Front: gradient card -->
+                {{if .Failed}}
+                <div class="absolute inset-0 rounded-xl bg-gradient-to-r from-red-700 to-red-900 p-5 text-white"
+                     style="backface-visibility:hidden">
+                {{else}}
                 <div class="absolute inset-0 rounded-xl bg-gradient-to-r from-green-700 to-green-900 p-5 text-white"
                      style="backface-visibility:hidden">
+                {{end}}
                     <div class="flex items-start">
                         <svg width="24" height="24" viewBox="0 0 141 141" fill="none" xmlns="http://www.w3.org/2000/svg">
                             <circle cx="70.5" cy="70.5" r="70.5" fill="rgba(255,255,255,0.2)"/>
@@ -33,7 +53,11 @@
                         </svg>
                     </div>
                     <h3 class="mt-8 text-2xl font-bold">{{.Title}}</h3>
+                    {{if .Failed}}
+                    <p class="mt-1 text-sm text-red-200 opacity-80">Failed</p>
+                    {{else}}
                     <p class="mt-1 text-sm text-green-200 opacity-80">Verified</p>
+                    {{end}}
                 </div>
                 <!-- Back: credential details -->
                 <div class="absolute inset-0 rounded-xl bg-white p-4 overflow-y-auto shadow-lg"
@@ -78,15 +102,6 @@
         {{end}}
     </div>
 
-    <!-- same_subject callout -->
-    <div class="mt-4 bg-green-50 border border-green-100 rounded-lg p-3 text-left">
-        <p class="text-xs text-green-900">
-            <span class="font-semibold">same_subject validated:</span>
-            The subject DID in the identity credential matches the DID reference
-            in the delegation credential, confirming the delegation chain.
-        </p>
-    </div>
-
     <div class="mt-2 text-gray-400 text-xs text-center">
         Policies run: {{.PolicyResults.PoliciesRun}} &middot; {{.PolicyResults.Time}}
     </div>
@@ -96,7 +111,7 @@
            class="inline-flex items-center text-sm leading-4 font-medium rounded-full
                   bg-gray-200 hover:bg-gray-300 text-gray-500
                   px-8 py-2.5 focus:outline-none shadow-sm no-underline">
-            New Verification
+            {{if .OverallSuccess}}New Verification{{else}}Try Again{{end}}
         </a>
     </div>
 </div>

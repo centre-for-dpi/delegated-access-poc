@@ -60,15 +60,50 @@ func handleHome(cfg Config) http.HandlerFunc {
 			http.NotFound(w, r)
 			return
 		}
+
+		schemas, err := FetchSchemas(cfg)
+		if err != nil {
+			log.Printf("Failed to fetch schemas: %v", err)
+			renderPage(w, "home.html", map[string]any{
+				"Title": "Delegated Access Verification",
+				"Error": "Could not load credential schemas: " + err.Error(),
+			})
+			return
+		}
+
+		analysis := AnalyzeSchemas(schemas)
+
 		renderPage(w, "home.html", map[string]any{
-			"Title": "Delegated Access Verification",
+			"Title":             "Delegated Access Verification",
+			"IdentitySchemas":   analysis.IdentitySchemas,
+			"DelegationSchemas": analysis.DelegationSchemas,
+			"HasDelegation":     analysis.HasDelegation,
+			"SchemaCount":       len(analysis.IdentitySchemas) + len(analysis.DelegationSchemas),
 		})
 	}
 }
 
 func handleVerify(cfg Config, store *SessionStore) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		openid4vpURL, err := CreateVerificationRequest(cfg)
+		schemas, err := FetchSchemas(cfg)
+		if err != nil {
+			log.Printf("verify: failed to fetch schemas: %v", err)
+			renderPartial(w, "error.html", map[string]any{
+				"Error": "Failed to load credential schemas: " + err.Error(),
+			})
+			return
+		}
+
+		analysis := AnalyzeSchemas(schemas)
+
+		if len(analysis.IdentitySchemas) == 0 && len(analysis.DelegationSchemas) == 0 {
+			renderPartial(w, "error.html", map[string]any{
+				"Error": "No registered credential schemas found. Please create and register schemas in the issuer portal first.",
+			})
+			return
+		}
+
+		openid4vpURL, err := CreateVerificationRequest(cfg, analysis)
 		if err != nil {
 			log.Printf("verify error: %v", err)
 			renderPartial(w, "error.html", map[string]any{

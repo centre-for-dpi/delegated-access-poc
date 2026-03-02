@@ -3,40 +3,63 @@
     Delegated Access Verification
 </h1>
 <p class="mt-3 text-gray-500 text-sm">
-    Verify a parent's delegated authority over a child using linked credentials
+    Verify credentials and delegated authority using linked credential presentation
 </p>
 
 <hr class="mt-8 border-gray-100">
 
+{{if .Error}}
+<div class="mt-6 bg-red-50 border border-red-100 rounded-lg p-4 text-left">
+    <p class="text-sm text-red-700">{{.Error}}</p>
+</div>
+{{else}}
+
 <div class="mt-6 text-left">
     <h3 class="text-gray-500 font-semibold text-sm mb-3">Required Credentials</h3>
     <div class="flex flex-col gap-3">
+        {{range .IdentitySchemas}}
         <div class="border border-gray-100 rounded-lg p-4">
             <div class="flex items-center gap-2">
                 <span class="inline-block w-2 h-2 rounded-full bg-primary-400"></span>
-                <span class="font-semibold text-gray-900 text-sm">Birth Certificate</span>
+                <span class="font-semibold text-gray-900 text-sm">{{.DisplayName}}</span>
             </div>
-            <p class="text-gray-500 text-xs mt-1 ml-4">Proves the child's identity</p>
+            {{if .Description}}
+            <p class="text-gray-500 text-xs mt-1 ml-4">{{.Description}}</p>
+            {{else}}
+            <p class="text-gray-500 text-xs mt-1 ml-4">Identity credential with generated subject DID</p>
+            {{end}}
         </div>
+        {{end}}
+
+        {{range .DelegationSchemas}}
         <div class="border border-gray-100 rounded-lg p-4">
             <div class="flex items-center gap-2">
                 <span class="inline-block w-2 h-2 rounded-full bg-primary-400"></span>
-                <span class="font-semibold text-gray-900 text-sm">Parental Delegation Credential</span>
+                <span class="font-semibold text-gray-900 text-sm">{{.DisplayName}}</span>
+                <span class="text-xs font-medium px-2 py-0.5 rounded-full bg-amber-50 text-amber-600 border border-amber-200">Delegation</span>
             </div>
-            <p class="text-gray-500 text-xs mt-1 ml-4">Proves the parent's authority over the child</p>
+            {{if .Description}}
+            <p class="text-gray-500 text-xs mt-1 ml-4">{{.Description}}</p>
+            {{else}}
+            <p class="text-gray-500 text-xs mt-1 ml-4">Delegation credential linking to an identity credential</p>
+            {{end}}
         </div>
+        {{end}}
     </div>
 </div>
 
+{{if .HasDelegation}}
 <div class="mt-4 bg-primary-50 border border-primary-100 rounded-lg p-3 text-left">
     <p class="text-xs text-primary-900">
         <span class="font-semibold">Cross-credential validation:</span>
         The <code class="bg-primary-100 px-1 rounded text-xs">same_subject</code> policy ensures
-        the child's DID in the Birth Certificate matches the
-        <code class="bg-primary-100 px-1 rounded text-xs">onBehalfOf.id</code> in the Delegation Credential.
+        the subject DID in the identity credential matches the DID reference
+        in the delegation credential, confirming the delegation chain.
     </p>
 </div>
+{{end}}
 
+{{if gt .SchemaCount 0}}
 <div class="mt-8" id="verify-action">
     <button
         hx-post="/verify"
@@ -57,4 +80,12 @@
         </div>
     </div>
 </div>
+{{else}}
+<div class="mt-8 text-center">
+    <p class="text-gray-400 text-sm">No registered credential schemas found.</p>
+    <p class="text-gray-300 text-xs mt-1">Create and register schemas in the issuer portal first.</p>
+</div>
+{{end}}
+
+{{end}}
 {{end}}

@@ -1,0 +1,258 @@
+{{define "content"}}
+<div class="flex items-center gap-2 mb-1">
+    <a href="/" class="text-gray-300 hover:text-gray-500 text-sm">Dashboard</a>
+    <svg class="w-3 h-3 text-gray-200" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path>
+    </svg>
+    <a href="/issuers/{{.Issuer.ID}}" class="text-gray-300 hover:text-gray-500 text-sm">{{.Issuer.Name}}</a>
+    <svg class="w-3 h-3 text-gray-200" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path>
+    </svg>
+    <span class="text-sm text-gray-500">Issue {{.Schema.DisplayName}}</span>
+</div>
+
+<h1 class="text-xl sm:text-2xl font-bold text-gray-900 mb-1">Issue {{.Schema.DisplayName}}</h1>
+<p class="text-gray-400 text-sm mb-6">Fill in the credential data and issue via OID4VCI</p>
+
+<hr class="mb-6 border-gray-100">
+
+<div id="issue-container">
+    <form hx-post="/issuers/{{.Issuer.ID}}/schemas/{{.Schema.ID}}/issue"
+          hx-target="#issue-result"
+          hx-swap="innerHTML"
+          class="space-y-5">
+
+        <!-- Subject name (for registry) -->
+        <div>
+            <label class="block text-xs font-medium text-gray-500 mb-1">Subject Name (for registry)</label>
+            <input type="text" name="subjectName" required placeholder="e.g., Maria Garcia Lopez"
+                   class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-900
+                          focus:outline-none focus:ring-2 focus:ring-primary-200 focus:border-primary-400">
+            <p class="text-xs text-gray-300 mt-1">
+                {{if eq .Schema.SubjectDIDStrategy "generate"}}
+                    A new did:key will be generated for the credential subject at issuance
+                {{else}}
+                    The wallet holder's DID will be used as the credential subject
+                {{end}}
+            </p>
+        </div>
+
+        <hr class="border-gray-100">
+        <p class="text-xs font-semibold text-gray-400 uppercase tracking-wider">Credential Subject Fields</p>
+
+        {{range .FormFields}}
+        {{if .IsGroup}}
+        <fieldset class="border border-gray-100 rounded-lg p-4">
+            <legend class="text-xs font-medium text-gray-500 px-2">{{.Label}}</legend>
+            {{range .Children}}
+            <div class="mb-3">
+                <label class="block text-xs text-gray-400 mb-0.5">{{.Label}}</label>
+                {{if eq .InputType "did_ref"}}
+                <!-- DID Reference picker (nested) -->
+                <input type="hidden" name="{{.FormName}}" id="{{.FormName}}_value">
+                <div class="flex gap-2 mb-2">
+                    <button type="button" onclick="setDidMode('{{.FormName}}', 'picker')"
+                            id="{{.FormName}}_btn_picker"
+                            class="text-xs font-medium px-3 py-1 rounded-full bg-primary-50 text-primary-500 border border-primary-200">
+                        Pick from credential
+                    </button>
+                    <button type="button" onclick="setDidMode('{{.FormName}}', 'manual')"
+                            id="{{.FormName}}_btn_manual"
+                            class="text-xs font-medium px-3 py-1 rounded-full bg-gray-50 text-gray-400 border border-gray-200">
+                        Enter manually
+                    </button>
+                </div>
+                <div id="{{.FormName}}_picker">
+                    <input type="text" placeholder="Search by name, type, or DID..."
+                           id="{{.FormName}}_search"
+                           hx-get="/issuers/{{.IssuerID}}/credentials/dids?fieldName={{.FormName}}"
+                           hx-trigger="input changed delay:300ms, focus"
+                           hx-target="#{{.FormName}}_results"
+                           hx-swap="innerHTML"
+                           hx-include="this"
+                           name="search"
+                           autocomplete="off"
+                           class="w-full border border-gray-200 rounded px-3 py-2 text-sm text-gray-900
+                                  focus:outline-none focus:ring-1 focus:ring-primary-200">
+                    <div id="{{.FormName}}_results"
+                         class="mt-1 max-h-48 overflow-y-auto border border-gray-100 rounded-lg">
+                        <p class="text-xs text-gray-300 p-3 text-center">Click to load credentials...</p>
+                    </div>
+                    <div id="{{.FormName}}_selected" class="hidden mt-1 bg-primary-50 border border-primary-100 rounded-lg p-3">
+                        <div class="flex items-center justify-between">
+                            <div>
+                                <p class="text-xs font-medium text-primary-700" id="{{.FormName}}_sel_label"></p>
+                                <p class="text-xs font-mono text-primary-500 truncate" id="{{.FormName}}_sel_did"></p>
+                            </div>
+                            <button type="button" onclick="clearDidSelection('{{.FormName}}')"
+                                    class="text-xs text-gray-400 hover:text-red-400">Clear</button>
+                        </div>
+                    </div>
+                </div>
+                <div id="{{.FormName}}_manual" class="hidden">
+                    <input type="text" placeholder="did:key:z6Mk..."
+                           id="{{.FormName}}_manual_input"
+                           oninput="document.getElementById('{{.FormName}}_value').value = this.value"
+                           class="w-full border border-gray-200 rounded px-3 py-2 text-sm text-gray-900 font-mono
+                                  focus:outline-none focus:ring-1 focus:ring-primary-200">
+                </div>
+                {{else if eq .InputType "date"}}
+                <input type="date" name="{{.FormName}}" {{if .Required}}required{{end}}
+                       class="w-full border border-gray-200 rounded px-3 py-2 text-sm text-gray-900
+                              focus:outline-none focus:ring-1 focus:ring-primary-200">
+                {{else if eq .InputType "number"}}
+                <input type="number" name="{{.FormName}}" {{if .Required}}required{{end}}
+                       class="w-full border border-gray-200 rounded px-3 py-2 text-sm text-gray-900
+                              focus:outline-none focus:ring-1 focus:ring-primary-200">
+                {{else}}
+                <input type="text" name="{{.FormName}}" {{if .Required}}required{{end}}
+                       class="w-full border border-gray-200 rounded px-3 py-2 text-sm text-gray-900
+                              focus:outline-none focus:ring-1 focus:ring-primary-200">
+                {{end}}
+            </div>
+            {{end}}
+        </fieldset>
+        {{else}}
+        <div>
+            <label class="block text-xs font-medium text-gray-500 mb-1">{{.Label}}</label>
+            {{if eq .InputType "date"}}
+            <input type="date" name="{{.FormName}}" {{if .Required}}required{{end}}
+                   class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-900
+                          focus:outline-none focus:ring-2 focus:ring-primary-200 focus:border-primary-400">
+            {{else if eq .InputType "number"}}
+            <input type="number" name="{{.FormName}}" {{if .Required}}required{{end}}
+                   class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-900
+                          focus:outline-none focus:ring-2 focus:ring-primary-200 focus:border-primary-400">
+            {{else if eq .InputType "boolean"}}
+            <select name="{{.FormName}}"
+                    class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-900
+                           focus:outline-none focus:ring-2 focus:ring-primary-200 focus:border-primary-400">
+                <option value="true">True</option>
+                <option value="false">False</option>
+            </select>
+            {{else if eq .InputType "did_ref"}}
+            <!-- DID Reference picker (top-level) -->
+            <input type="hidden" name="{{.FormName}}" id="{{.FormName}}_value">
+            <div class="flex gap-2 mb-2">
+                <button type="button" onclick="setDidMode('{{.FormName}}', 'picker')"
+                        id="{{.FormName}}_btn_picker"
+                        class="text-xs font-medium px-3 py-1 rounded-full bg-primary-50 text-primary-500 border border-primary-200">
+                    Pick from credential
+                </button>
+                <button type="button" onclick="setDidMode('{{.FormName}}', 'manual')"
+                        id="{{.FormName}}_btn_manual"
+                        class="text-xs font-medium px-3 py-1 rounded-full bg-gray-50 text-gray-400 border border-gray-200">
+                    Enter manually
+                </button>
+            </div>
+            <div id="{{.FormName}}_picker">
+                <input type="text" placeholder="Search by name, type, or DID..."
+                       id="{{.FormName}}_search"
+                       hx-get="/issuers/{{.IssuerID}}/credentials/dids?fieldName={{.FormName}}"
+                       hx-trigger="input changed delay:300ms, focus"
+                       hx-target="#{{.FormName}}_results"
+                       hx-swap="innerHTML"
+                       hx-include="this"
+                       name="search"
+                       autocomplete="off"
+                       class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-900
+                              focus:outline-none focus:ring-2 focus:ring-primary-200 focus:border-primary-400">
+                <div id="{{.FormName}}_results"
+                     class="mt-1 max-h-48 overflow-y-auto border border-gray-100 rounded-lg">
+                    <p class="text-xs text-gray-300 p-3 text-center">Click to load credentials...</p>
+                </div>
+                <div id="{{.FormName}}_selected" class="hidden mt-1 bg-primary-50 border border-primary-100 rounded-lg p-3">
+                    <div class="flex items-center justify-between">
+                        <div>
+                            <p class="text-xs font-medium text-primary-700" id="{{.FormName}}_sel_label"></p>
+                            <p class="text-xs font-mono text-primary-500 truncate" id="{{.FormName}}_sel_did"></p>
+                        </div>
+                        <button type="button" onclick="clearDidSelection('{{.FormName}}')"
+                                class="text-xs text-gray-400 hover:text-red-400">Clear</button>
+                    </div>
+                </div>
+            </div>
+            <div id="{{.FormName}}_manual" class="hidden">
+                <input type="text" placeholder="did:key:z6Mk..."
+                       id="{{.FormName}}_manual_input"
+                       oninput="document.getElementById('{{.FormName}}_value').value = this.value"
+                       class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-900 font-mono
+                              focus:outline-none focus:ring-2 focus:ring-primary-200 focus:border-primary-400">
+            </div>
+            {{else}}
+            <input type="text" name="{{.FormName}}" {{if .Required}}required{{end}}
+                   class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-900
+                          focus:outline-none focus:ring-2 focus:ring-primary-200 focus:border-primary-400">
+            {{end}}
+        </div>
+        {{end}}
+        {{end}}
+
+        <div class="flex justify-end gap-3">
+            <a href="/issuers/{{.Issuer.ID}}/schemas"
+               class="px-6 py-2 text-sm font-medium rounded-full bg-gray-100 hover:bg-gray-200 text-gray-600">Cancel</a>
+            <button type="submit"
+                    class="htmx-hide-on-request inline-flex items-center gap-2 text-sm font-medium rounded-full bg-primary-400 hover:bg-primary-500 text-white px-6 py-2.5 shadow-sm">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"></path>
+                </svg>
+                Issue Credential
+            </button>
+            <div class="htmx-indicator inline-flex items-center gap-2 text-sm text-gray-400">
+                <svg class="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+                </svg>
+                Issuing...
+            </div>
+        </div>
+    </form>
+
+    <div id="issue-result"></div>
+</div>
+
+<script>
+function setDidMode(fieldName, mode) {
+    var picker = document.getElementById(fieldName + '_picker');
+    var manual = document.getElementById(fieldName + '_manual');
+    var btnPicker = document.getElementById(fieldName + '_btn_picker');
+    var btnManual = document.getElementById(fieldName + '_btn_manual');
+
+    if (mode === 'picker') {
+        picker.classList.remove('hidden');
+        manual.classList.add('hidden');
+        btnPicker.className = 'text-xs font-medium px-3 py-1 rounded-full bg-primary-50 text-primary-500 border border-primary-200';
+        btnManual.className = 'text-xs font-medium px-3 py-1 rounded-full bg-gray-50 text-gray-400 border border-gray-200';
+        var manualInput = document.getElementById(fieldName + '_manual_input');
+        if (manualInput) manualInput.value = '';
+    } else {
+        picker.classList.add('hidden');
+        manual.classList.remove('hidden');
+        btnManual.className = 'text-xs font-medium px-3 py-1 rounded-full bg-primary-50 text-primary-500 border border-primary-200';
+        btnPicker.className = 'text-xs font-medium px-3 py-1 rounded-full bg-gray-50 text-gray-400 border border-gray-200';
+        clearDidSelection(fieldName);
+    }
+}
+
+function selectDid(fieldName, did, typeName, subjectName) {
+    document.getElementById(fieldName + '_value').value = did;
+    document.getElementById(fieldName + '_sel_label').textContent = subjectName + ' (' + typeName + ')';
+    document.getElementById(fieldName + '_sel_did').textContent = did;
+    document.getElementById(fieldName + '_selected').classList.remove('hidden');
+    document.getElementById(fieldName + '_results').classList.add('hidden');
+    document.getElementById(fieldName + '_search').classList.add('hidden');
+}
+
+function clearDidSelection(fieldName) {
+    document.getElementById(fieldName + '_value').value = '';
+    document.getElementById(fieldName + '_selected').classList.add('hidden');
+    var results = document.getElementById(fieldName + '_results');
+    if (results) results.classList.remove('hidden');
+    var search = document.getElementById(fieldName + '_search');
+    if (search) {
+        search.classList.remove('hidden');
+        search.value = '';
+    }
+}
+</script>
+{{end}}

@@ -51,9 +51,14 @@
     reverse_proxy http://verification-adapter:{$VERIFICATION_ADAPTER_PORT}
 }
 
-# Status List Service
-:{$STATUS_LIST_PORT} {
-    reverse_proxy http://status-list-service:{$STATUS_LIST_PORT}
+# Issuer Portal
+:{$ISSUER_PORTAL_PORT} {
+    reverse_proxy http://issuer-portal:{$ISSUER_PORTAL_PORT}
+}
+
+# Verification Portal
+:{$VERIFICATION_PORTAL_PORT} {
+    reverse_proxy http://verification-portal:{$VERIFICATION_PORTAL_PORT}
 }
 
 # pgAdmin

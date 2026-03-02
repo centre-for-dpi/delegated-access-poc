@@ -135,6 +135,7 @@ services:
       SERVICE_HOST: $SERVICE_HOST
       VERIFIER_API_PORT: $VERIFIER_API_PORT
       DEMO_WALLET_FRONTEND_PORT: $DEMO_WALLET_FRONTEND_PORT
+      ISSUER_PORTAL_PORT: $ISSUER_PORTAL_PORT
     extra_hosts:
       - "$SERVICE_HOST:host-gateway"
 
@@ -227,27 +228,48 @@ services:
     volumes:
       - ./vault/init.sh:/vault/scripts/init.sh
 
-  status-list-service:
+  issuer-portal:
     build:
-      context: ./status-list-service
+      context: ./issuer-portal
       dockerfile: Dockerfile
     profiles:
-      - services
+      - apps
       - identity
       - all
     depends_on:
       - caddy
       - issuer-api
     environment:
-      PORT: $STATUS_LIST_PORT
+      PORT: $ISSUER_PORTAL_PORT
       SERVICE_HOST: $SERVICE_HOST
       ISSUER_API_PORT: $ISSUER_API_PORT
-      ISSUER_KEY: '{"type":"jwk","jwk":{"kty":"OKP","d":"mDhpwaH6JYSrD2Bq7Cs-pzmsjlLj4EOhxyI-9DM1mFI","crv":"Ed25519","kid":"Vzx7l5fh56F3Pf9aR3DECU5BwfrY6ZJe05aiWYWzan8","x":"T3T4-u1Xz3vAV2JwPNxWfs4pik_JLiArz_WTCvrCFUM"}}'
-      ISSUER_DID: "did:key:z6MkjoRhq1jSNJdLiruSXrFFxagqrztZaXHqHGUTKJbcNywp"
+      DEMO_WALLET_FRONTEND_PORT: $DEMO_WALLET_FRONTEND_PORT
+      ISSUER_API_CONFIG_DIR: /issuer-api-config
     extra_hosts:
       - "$SERVICE_HOST:host-gateway"
     volumes:
-      - status-list-data:/app/data
+      - issuer-portal-data:/app/data
+      - ./issuer-api/config:/issuer-api-config
+      - /var/run/docker.sock:/var/run/docker.sock
+
+  verification-portal:
+    build:
+      context: ./verification-portal
+      dockerfile: Dockerfile
+    profiles:
+      - apps
+      - identity
+      - all
+    depends_on:
+      - caddy
+    environment:
+      PORT: $VERIFICATION_PORTAL_PORT
+      SERVICE_HOST: $SERVICE_HOST
+      VERIFIER_API_PORT: $VERIFIER_API_PORT
+      DEMO_WALLET_FRONTEND_PORT: $DEMO_WALLET_FRONTEND_PORT
+      ISSUER_PORTAL_PORT: $ISSUER_PORTAL_PORT
+    extra_hosts:
+      - "$SERVICE_HOST:host-gateway"
 
   opa-server:
     platform: linux/amd64
@@ -316,8 +338,13 @@ services:
         protocol: tcp
         mode: host
 
-      - target: "$STATUS_LIST_PORT"
-        published: $STATUS_LIST_PORT # status-list-service
+      - target: "$ISSUER_PORTAL_PORT"
+        published: $ISSUER_PORTAL_PORT # issuer-portal
+        protocol: tcp
+        mode: host
+
+      - target: "$VERIFICATION_PORTAL_PORT"
+        published: $VERIFICATION_PORTAL_PORT # verification-portal
         protocol: tcp
         mode: host
 
@@ -332,4 +359,4 @@ volumes:
   wallet-api-db:
   vault_data:
   valkey_data:
-  status-list-data:
+  issuer-portal-data:

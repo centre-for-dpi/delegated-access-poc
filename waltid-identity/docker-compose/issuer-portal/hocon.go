@@ -9,7 +9,12 @@ import (
 
 // appendCredentialType appends a new credential type configuration to the
 // credential-issuer-metadata.conf HOCON file.
+// ldp_vc schemas are managed entirely by the issuer-portal's own OID4VCI server
+// and do not need to be registered with Walt.id issuer-api.
 func appendCredentialType(configDir string, schema *CredentialSchema) error {
+	if schema.EffectiveFormat() == "ldp_vc" {
+		return nil // not managed by Walt.id; no HOCON entry needed
+	}
 	configPath := filepath.Join(configDir, "credential-issuer-metadata.conf")
 
 	data, err := os.ReadFile(configPath)

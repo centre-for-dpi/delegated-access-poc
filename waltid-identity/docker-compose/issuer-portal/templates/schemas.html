@@ -37,17 +37,22 @@
                 <p class="text-xs text-gray-400 font-mono">{{.TypeName}}</p>
             </div>
             <div class="flex items-center gap-2">
+                {{if eq .Format "ldp_vc"}}
+                <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-mono bg-purple-50 text-purple-700">ldp_vc</span>
+                {{else}}
+                <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-mono bg-blue-50 text-blue-700">jwt_vc_json</span>
+                {{end}}
                 {{if .RegisteredWithIssuerAPI}}
                 <span class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-50 text-green-800">
                     <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
-                    </svg>Registered
+                    </svg>{{if eq .Format "ldp_vc"}}Active{{else}}Registered{{end}}
                 </span>
                 {{else}}
                 <span class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-50 text-yellow-700">
                     <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
-                    </svg>Not Registered
+                    </svg>Inactive
                 </span>
                 {{end}}
             </div>
@@ -70,10 +75,16 @@
             <a href="/issuers/{{.IssuerID}}/schemas/{{.ID}}/issue"
                class="font-medium text-primary-400 hover:text-primary-500">Issue Credential</a>
             {{else}}
+            {{if eq .Format "ldp_vc"}}
+            <button hx-post="/issuers/{{.IssuerID}}/schemas/{{.ID}}/register"
+                    hx-target="#toast" hx-swap="outerHTML"
+                    class="font-medium text-purple-600 hover:text-purple-700">Activate Schema</button>
+            {{else}}
             <button hx-post="/issuers/{{.IssuerID}}/schemas/{{.ID}}/register"
                     hx-target="#toast" hx-swap="outerHTML"
                     hx-confirm="This will update the issuer-api config and restart it. Continue?"
                     class="font-medium text-yellow-600 hover:text-yellow-700">Register with Issuer API</button>
+            {{end}}
             {{end}}
         </div>
     </div>

@@ -1,157 +1,221 @@
 # Delegated Access PoC — Architecture
 
-## What This Project Does
+## Purpose
 
-A parent needs to access government services on behalf of their child — enrolling them in school, collecting benefits, or visiting a hospital. Today this typically requires physical documents and in-person visits. This project proves that **verifiable digital credentials** can solve this problem securely and instantly.
+A parent accesses government services on behalf of their child using two verifiable credentials: an **identity credential** (e.g. Birth Certificate) and a **delegation credential** (e.g. Parental Delegation). The system enforces that the delegation refers to the correct identity via a `same_subject` DID constraint — both credentials must be presented together.
 
-An administrator designs credential schemas through the **Issuer Portal** — defining identity credentials (e.g. Birth Certificate) and delegation credentials (e.g. Parental Delegation) with fields that reference other credentials via DID. The system dynamically detects these `did_ref` links and enforces `same_subject` constraints at verification time, ensuring the delegation credential refers to the correct identity credential.
-
-If a credential is compromised or a delegation is withdrawn, an administrator can revoke it instantly through the Issuer Portal. Any subsequent verification attempt will fail.
+Schemas are designed dynamically through the Issuer Portal. Fields marked as `did_ref` create cross-credential DID links detected automatically at verification time. Credentials can be revoked instantly via BitstringStatusList.
 
 ---
 
-## Architecture Overview
+## System Diagram
 
 ```
-                    ┌──────────────────────────────┐
-                    │       Issuer Portal (:7107)   │
-                    │  schema design, issuance,     │
-                    │  revocation, status list mgmt  │
-                    └──────────┬───────────────────┘
-                               │ issues via issuer-api
-                 ┌─────────────┼──────────────────┐
-                 ▼                                 ▼
-       ┌───────────────────┐           ┌─────────────────────────┐
-       │ Identity Credential│           │ Delegation Credential    │
-       │ subjectDID: generate│◄────────►│ subjectDID: wallet       │
-       │ e.g. BirthCert     │same_subject│ did_ref → identity DID  │
-       └────────┬───────────┘  linking  └────────┬────────────────┘
-                │                                │
-                └────────────┬───────────────────┘
-                             ▼
-                  ┌─────────────────────┐
-                  │   Holder's Wallet   │
-                  │  (wallet-api :7001) │
-                  └────────┬────────────┘
-                           │ presents both
-                           ▼
-              ┌──────────────────────────┐
-              │  Verification Portal     │
-              │       (:7108)            │
-              │  dynamic schema select,  │
-              │  QR code, result display │
-              └────────┬─────────────────┘
-                       │ creates session via
-                       ▼
-              ┌─────────────────────┐
-              │   verifier-api      │
-              │     (:7003)         │
-              └─────────────────────┘
+                     Issuer Portal (:7107)
+                    schema design, issuance,
+                  ldp_vc signing (Ed25519), revocation
+                          │
+            ┌─────────────┴──────────────┐
+            ▼                            ▼
+    Identity Credential         Delegation Credential
+    subjectDID: generate   ◄──► subjectDID: wallet
+    e.g. BirthCert          same_subject  did_ref → identity DID
+            │                            │
+            └────────────┬───────────────┘
+                         ▼
+                  Go Wallet (:7111)
+                  ldp_vc credential store
+                         │
+           ┌─────────────┴──────────────────┐
+           ▼                                ▼
+   Verification Portal        PixelPass Adapter (:7110)
+        (:7108)               wallet cred → CBOR+zlib+Base45 QR
+   walt.id OID4VP flow                     │
+   same_subject constraint                 ▼
+           │                     Inji Verify (:7109)
+           ▼                     offline QR scan + online OID4VP
+    verifier-api (:7003)                   │
+                                           ▼
+                              inji-verify-service (internal)
+                              Ed25519Signature2020 validation
 ```
 
-## Credential Linking (same_subject)
-
-Credentials are linked dynamically based on schema field types:
-
-- **Identity credentials** have `subjectDidStrategy: "generate"` — the issuer generates a unique DID for the credential subject (stored in `credentialSubject.id`).
-- **Delegation credentials** contain one or more `did_ref` fields — these reference DIDs from other credentials (e.g. `credentialSubject.onBehalfOf` or `credentialSubject.onBehalfOf.id`).
-
-The verification portals discover these relationships at runtime by fetching schemas from the Issuer Portal's `/api/schemas` endpoint. The presentation definition's `same_subject` constraint ensures the `did_ref` value in the delegation credential matches `credentialSubject.id` in the identity credential. Both credentials must be presented together; neither is sufficient alone.
-
-## Revocation (BitstringStatusList)
-
-Each credential embeds a `credentialStatus` block pointing to a shared status list:
-
-```json
-{
-  "type": "BitstringStatusListEntry",
-  "statusPurpose": "revocation",
-  "statusListIndex": "N",
-  "statusListCredential": "http://status-list-service:7006/status/revocation/1"
-}
-```
-
-The status list service maintains a 131,072-bit bitstring (W3C BitstringStatusList spec). Each credential is assigned a unique index. Setting bit N to 1 revokes the credential at that index. The verifier fetches the status list during verification and checks the relevant bit.
-
-```txt
-Bitstring:  [0][0][0][1][0][0]...   ← bit 3 is set = credential at index 3 is revoked
-             0  1  2  3  4  5
-```
+---
 
 ## Services
 
-| Service | Port | Technology | Role |
-| --- | --- | --- | --- |
-| **issuer-api** | 7002 | walt.id (Kotlin) | Signs and issues credentials via OID4VCI |
-| **verifier-api** | 7003 | walt.id (Kotlin) | Verifies presentations via OID4VP |
-| **wallet-api** | 7001 | walt.id (Kotlin) | Stores credentials, handles claim/present flows |
-| **issuer-portal** | 7107 | Go | Schema design, credential issuance, revocation, status list management |
-| **verification-portal** | 7108 | Go | Dynamic credential verification UI with per-credential result coloring |
-| **verification-adapter** | 7105 | Go | Original verification UI (hardcoded credential types) |
-| **opa-server** | 8181 | Open Policy Agent | Policy evaluation for verifier |
-| **web-portal** | 7102 | Next.js (walt.id) | walt.id credential issuance and verification portal |
-| **vc-repo** | 7103 | Nuxt (walt.id) | Credential template repository |
-| **demo-wallet** | 7101 | Nuxt (walt.id) | Browser-based wallet UI |
-| **caddy** | — | Caddy | Reverse proxy, routes all ports |
-| **postgres** | 5432 | PostgreSQL | Wallet persistence |
+### Core Infrastructure
 
-## Custom Components
+| Service | Port | Image | Role |
+|---|---|---|---|
+| caddy | all published | caddy:2 | Reverse proxy for all services |
+| postgres | 5432 | postgres | Wallet-api persistence |
+| inji-verify-postgres | internal | postgres:13 | Inji verify-service persistence (Flyway) |
 
-### Issuer Portal (`issuer-portal/`)
+### Walt.id Services
 
-A Go web application for schema design, credential issuance, and revocation management.
+| Service | Port | Role |
+|---|---|---|
+| wallet-api | 7001 | Credential store, OID4VCI/OID4VP flows (jwt_vc_json only) |
+| issuer-api | 7002 | JWT credential signing via OID4VCI |
+| verifier-api | 7003 | OID4VP presentation verification |
+| demo-wallet | 7101 | Browser wallet UI |
+| web-portal | 7102 | Walt.id issuance/verification portal |
+| vc-repo | 7103 | Credential template repository |
+
+### Custom Services (Go)
+
+| Service | Port | Role |
+|---|---|---|
+| issuer-portal | 7107 | Schema CRUD, dual-format issuance, Ed25519 ldp_vc signing, revocation |
+| go-wallet | 7111 | ldp_vc wallet — OID4VCI client, per-user Ed25519 keys, HTMX UI |
+| verification-portal | 7108 | Dynamic OID4VP verification with same_subject constraints |
+| verification-adapter | 7105 | Original hardcoded verification UI (superseded) |
+
+### MOSIP Inji Verify
+
+| Service | Port | Role |
+|---|---|---|
+| inji-verify-ui | 7109 (via Caddy) | React/nginx — online QR + offline scan UI |
+| inji-verify-service | 8080 (internal) | Java Spring Boot — OID4VP sessions + VC signature validation |
+
+### PixelPass Adapter
+
+| Service | Port | Role |
+|---|---|---|
+| pixelpass-adapter | 7110 | Node.js — encodes ldp_vc as PixelPass QR; proxies vc-verification with Content-Type correction |
+
+---
+
+## Credential Formats
+
+| Format | Issued by | Signed by | Verified by | Notes |
+|---|---|---|---|---|
+| `ldp_vc` | issuer-portal OID4VCI (`/oidc/*`) | issuer-portal Go process (Ed25519Signature2020) | inji-verify-service `LdpVerifier` | Target format. `@vocab` context entry required for cross-processor canonical consistency |
+| `jwt_vc_json` | issuer-portal → walt.id issuer-api | issuer-api (JWT/EdDSA) | verifier-api | Legacy path. No embedded proof — incompatible with Inji Verify offline |
+
+---
+
+## Credential Linking
+
+| Concept | Value | Meaning |
+|---|---|---|
+| `subjectDidStrategy: "generate"` | Identity credential | Issuer generates a unique DID for the subject |
+| `subjectDidStrategy: "wallet"` | Delegation credential | Subject DID comes from the holder's wallet |
+| `did_ref` field type | Any schema field | Marks a cross-credential DID reference → triggers `same_subject` constraint |
+
+Verification portals fetch schemas from `/api/schemas`, detect `did_ref` links, and build presentation definitions with `same_subject` constraints automatically.
+
+---
+
+## ldp_vc Signing (issuer-portal `signing.go`)
+
+```
+hashData = SHA256(URDNA2015(proofOptions)) || SHA256(URDNA2015(credential))
+proofValue = 'z' + base58btc(Ed25519.Sign(privateKey, hashData))
+```
+
+| Normalization | Why |
+|---|---|
+| `issuer` coerced to plain DID string | Java/Go JSON-LD processors diverge on `{id, name}` objects under `@type: @id` |
+| `credentialStatus` stripped | Issuer-portal status lists are JWT; MOSIP `LdpStatusChecker` expects JSON-LD |
+| `issuanceDate` in UTC | MOSIP rejects `ERR_ISSUANCE_DATE_IS_FUTURE_DATE` when local-time offset exceeds UTC |
+| `@vocab` added to `@context` | Go `json-gold` keeps undefined `@type` values; Java Titanium/Python pyld drop them — `@vocab` forces consistent IRI expansion |
+| Ed25519-2020 context added | Required for proof term definitions during canonicalization |
+
+---
+
+## Revocation (BitstringStatusList)
+
+Each jwt_vc_json credential embeds a `credentialStatus` with a `statusListIndex`. The issuer-portal maintains a 131,072-bit bitstring per issuer. Setting bit N revokes credential N. The verifier fetches the status list at verification time.
+
+ldp_vc credentials have `credentialStatus` stripped before signing (see above).
+
+---
+
+## Caddy Routing
+
+| Port | Route | Upstream |
+|---|---|---|
+| 7001 | `/*` | wallet-api:7001 |
+| 7002 | `/*` | issuer-api:7002 |
+| 7003 | `/*` | verifier-api:7003 |
+| 7101 | `/wallet-api/*` | wallet-api:7001 |
+| 7101 | `/*` | waltid-demo-wallet:7101 |
+| 7107 | `/*` | issuer-portal:7107 |
+| 7108 | `/*` | verification-portal:7108 |
+| 7109 | `/v1/verify/vc-verification` | pixelpass-adapter:7110 **(must be first)** |
+| 7109 | `/v1/verify/*` | inji-verify-service:8080 |
+| 7109 | `/*` | inji-verify-ui:8000 |
+| 7110 | `/*` | pixelpass-adapter:7110 |
+| 7111 | `/*` | go-wallet:7111 |
+
+---
+
+## Custom Service Files
+
+### issuer-portal/
 
 | File | Purpose |
-| --- | --- |
-| `main.go` | HTTP server, route registration, config |
-| `models.go` | Schema registry with field types (`string`, `number`, `date`, `did_ref`, etc.) |
-| `schema.go` | Schema CRUD, HOCON config generation for issuer-api |
-| `issuance.go` | Credential issuance via OID4VCI (creates offer URLs) |
-| `bitstring.go` | BitstringStatusList revocation (131,072-bit array) |
-| `signing.go` | JWT signing delegation to issuer-api |
-| `api.go` | REST API endpoints (`/api/schemas`, `/api/issue`, etc.) |
-| `docker.go` | Live issuer-api container restart on schema changes |
+|---|---|
+| main.go | HTTP server, routes, config |
+| models.go | Schema/session types, `EffectiveFormat()` |
+| schema.go | Schema CRUD; ldp_vc activates instantly, jwt_vc_json updates HOCON + restarts Walt.id |
+| issuance.go | Dual-format issuance; ldp_vc creates pre-auth session + offer URL |
+| oidc.go | Native OID4VCI: `/.well-known/openid-credential-issuer`, `/oidc/token`, `/oidc/credential` |
+| signing.go | Ed25519Signature2020 signing (URDNA2015 via json-gold); private key stays in-process |
+| bitstring.go | BitstringStatusList revocation |
+| api.go | REST: `/api/schemas`, `/api/issuers` (key redacted), `/api/sign/ldp` |
+| hocon.go | Generates issuer-api HOCON for jwt_vc_json schemas |
+| docker.go | Live issuer-api container restart |
 
-**Key concepts:**
-- **`subjectDidStrategy`**: `"generate"` = issuer creates a unique DID for the subject (identity credentials); `"wallet"` = subject DID comes from the holder's wallet (delegation credentials)
-- **`did_ref` field type**: Marks a field as a DID reference to another credential's subject, enabling automatic `same_subject` constraint generation
-- **Schema API** (`/api/schemas`): Returns all registered schemas with fields and `subjectDidStrategy`, consumed by verification portals
-
-### Verification Portal (`verification-portal/`)
-
-A Go web application providing dynamic credential verification with per-credential result coloring.
+### go-wallet/
 
 | File | Purpose |
-| --- | --- |
-| `main.go` | HTTP server, session cleanup, template loading |
-| `verifier.go` | Fetches schemas from issuer-portal, detects delegation relationships, builds dynamic verification requests with `same_subject` constraints |
-| `handlers.go` | Home page, QR display, polling, per-credential result rendering |
-| `session.go` | In-memory session store, polymorphic policy error handling |
+|---|---|
+| main.go | HTTP server, HTMX UI handlers, template rendering |
+| models.go | Per-user data store (credentials, Ed25519 keys, sessions), did:key derivation |
+| oidc.go | OID4VCI client: resolve offer → metadata → token exchange → credential request with proof JWT |
+| api.go | Walt.id-compatible REST API (login, wallets, credentials) for pixelpass-adapter |
 
-**Dynamic delegation detection:** On each verification request, the portal fetches schemas from the issuer-portal API, identifies identity schemas (`subjectDidStrategy: "generate"`) and delegation schemas (containing `did_ref` fields), and builds a presentation definition with `same_subject` constraints linking the delegation's `did_ref` path to the identity credential's `credentialSubject.id`.
+### verification-portal/
 
-**Per-credential result coloring:** When verification fails, each credential card is individually colored red or green based on which policies failed. VP-level `same_subject` failures are attributed to the delegation credential (identified by `ref_` prefix in the constraint field IDs).
+| File | Purpose |
+|---|---|
+| main.go | HTTP server, session cleanup |
+| verifier.go | Fetches schemas, detects delegation relationships, builds same_subject constraints |
+| handlers.go | QR display, polling, per-credential result coloring |
+| session.go | Session store, policy error handling |
 
-### Verification Adapter (`verification-adapter-waltid/`)
+### pixelpass-adapter/
 
-The original Go verification UI with hardcoded credential types (BirthCertificate + ParentalDelegationCredential). Superseded by the verification-portal for dynamic use cases.
+| File | Purpose |
+|---|---|
+| server.js | Express app: QR encoding (CBOR→zlib→Base45), `/api/qr` JSON endpoint, vc-verification proxy |
 
-## Verification Policies
+---
 
-Every verification checks these policies:
+## MOSIP Inji Verify Internals
 
-| Level | Policy | What It Checks |
-| --- | --- | --- |
-| VC | `signature` | EdDSA cryptographic signature is valid |
-| VC | `expired` | Credential has not passed its expiration date |
-| VC | `not-before` | Credential's validity period has started |
-| VC | `credential-status` | BitstringStatusList bit is 0 (not revoked) |
-| VP | `signature` | Verifiable presentation signature is valid |
-| VP | `presentation-definition` | All required credential types are present |
-| VP | `same_subject` | DID references match across linked credentials |
+| Aspect | Detail |
+|---|---|
+| Signature verification | `LdpVerifier` → `URDNA2015Canonicalizer` → `SHA256(canon_proof) \|\| SHA256(canon_doc)` → Ed25519 verify |
+| JSON-LD library | Titanium JSON-LD (`com.apicatalog.jsonld`) + `com.apicatalog.rdf.canon.RdfCanon` |
+| Proof options context | `LdProof.builder().defaultContexts(true)` → `https://w3id.org/security/v3` (bundled locally; URL returns 404) |
+| Multibase decoding | `io.ipfs.multibase.Multibase.decode()` — strips `z` prefix, base58btc decodes |
+| Pre-signature validation | Rejects `issuanceDate > now` (`ERR_ISSUANCE_DATE_IS_FUTURE_DATE`) before checking signature |
+| Status checking | `LdpStatusChecker` — warns if no `credentialStatus` (not fatal); expects JSON-LD status list |
+| DID resolution | `did:key`, `did:jwk`, `did:web` |
+| Debug logging | Set `LOGGING_LEVEL_IO_MOSIP: TRACE` env to see `Credential Verification Summary` with error codes |
 
-The `same_subject` constraint is generated dynamically based on `did_ref` fields discovered in the schemas.
+---
 
 ## Docker Networking
 
-All inter-service communication uses Docker DNS (e.g. `http://issuer-api:7002`, `http://issuer-portal:7107`). The `statusListCredential` URL embedded in credentials uses the Docker service name so the verifier can fetch the status list from inside the Docker network. External access from the host uses `localhost:{port}` via Caddy.
+All inter-service communication uses Docker DNS (e.g. `http://issuer-portal:7107`). External access from the host uses `localhost:{port}` via Caddy. For EC2 deployment, set `SERVICE_HOST` in `.env` to the public IP — all DIDs and callback URLs update automatically.
+
+## Start Command
+
+```bash
+cd waltid-identity/docker-compose && docker compose --profile identity up -d --build
+```

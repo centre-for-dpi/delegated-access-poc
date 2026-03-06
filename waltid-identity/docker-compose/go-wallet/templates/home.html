@@ -1,0 +1,83 @@
+{{define "content"}}
+<div class="min-h-screen">
+    <!-- Header -->
+    <header class="bg-white border-b border-gray-100 h-16 flex items-center px-6">
+        <div class="flex items-center gap-3 flex-1">
+            <a href="/" class="flex items-center gap-2">
+                <svg class="w-8 h-8" viewBox="0 0 40 40" fill="none">
+                    <rect width="40" height="40" rx="20" fill="url(#grad)"/>
+                    <path d="M12 15h8v3h-8z" fill="#E6F6FF"/>
+                    <path d="M28 21l-2-.3c-1.3 7.3-9.3 7.3-9.3 7.3l-.3 2.3c8.3.3 11-5.3 11.6-9.3z" fill="#E6F6FF"/>
+                    <defs><linearGradient id="grad" x1="0" y1="0" x2="40" y2="40"><stop stop-color="#0573F0"/><stop offset="1" stop-color="#03449E"/></linearGradient></defs>
+                </svg>
+                <span class="text-sm font-bold text-gray-900 hidden sm:block">GO WALLET</span>
+            </a>
+        </div>
+        <div class="flex items-center gap-4">
+            <span class="text-xs text-gray-400 hidden sm:block">{{.Email}}</span>
+            <a href="/logout" class="text-xs text-gray-400 hover:text-red-500">Sign out</a>
+        </div>
+    </header>
+
+    <!-- Main -->
+    <main class="max-w-5xl mx-auto px-4 sm:px-6 py-8">
+        <!-- Title + actions -->
+        <div class="flex items-center justify-between mb-8">
+            <h1 class="text-3xl font-bold text-gray-900">Credentials</h1>
+            <div class="flex items-center gap-3">
+                <a href="/present"
+                   class="inline-flex items-center gap-2 rounded-xl border border-gray-200 bg-white px-5 py-2.5 text-sm font-semibold text-gray-700 hover:bg-gray-50 transition-colors shadow-sm">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"></path>
+                    </svg>
+                    Present
+                </a>
+                <a href="/claim"
+                   class="inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-primary-400 to-primary-700 px-5 py-2.5 text-sm font-semibold text-white hover:from-primary-500 hover:to-primary-800 transition-all shadow-sm">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path>
+                    </svg>
+                    Receive
+                </a>
+            </div>
+        </div>
+
+        {{if .Credentials}}
+        <!-- Credential grid -->
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
+            {{range .Credentials}}
+            <a href="/credentials/{{urlEncode .ID}}" class="block">
+                <div class="credential-card rounded-2xl shadow-lg p-5 h-40 flex flex-col justify-between transition-transform duration-200 cursor-pointer">
+                    <div>
+                        <p class="text-white text-lg font-bold leading-tight">{{truncate .TypeName 24}}</p>
+                    </div>
+                    <div>
+                        <p class="text-primary-100 text-[10px] uppercase tracking-wider mb-0.5">Issuer</p>
+                        <p class="text-white text-xs opacity-80">{{issuerName .ParsedDocument}}</p>
+                    </div>
+                </div>
+            </a>
+            {{end}}
+        </div>
+        {{else}}
+        <!-- Empty state -->
+        <div class="text-center py-20">
+            <svg class="mx-auto w-20 h-20 text-gray-200 mb-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1">
+                <rect x="2" y="5" width="20" height="15" rx="3"/>
+                <path d="M16 10a2 2 0 11-4 0 2 2 0 014 0z"/>
+                <path d="M2 10h6M16 10h6"/>
+            </svg>
+            <h2 class="text-xl font-semibold text-gray-400 mb-2">No credentials yet</h2>
+            <p class="text-sm text-gray-300 mb-6">Receive your first verifiable credential</p>
+            <a href="/claim"
+               class="inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-primary-400 to-primary-700 px-6 py-3 text-sm font-semibold text-white hover:from-primary-500 hover:to-primary-800 shadow-md">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path>
+                </svg>
+                Receive Credential
+            </a>
+        </div>
+        {{end}}
+    </main>
+</div>
+{{end}}

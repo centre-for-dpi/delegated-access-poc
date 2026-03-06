@@ -64,6 +64,7 @@ func handleCreateSchema(cfg Config, store *DataStore) http.HandlerFunc {
 		displayName := r.FormValue("displayName")
 		description := r.FormValue("description")
 		strategy := r.FormValue("subjectDidStrategy")
+		format := r.FormValue("credentialFormat")
 
 		if typeName == "" || displayName == "" {
 			renderPage(w, "schema_form.html", map[string]any{
@@ -78,6 +79,9 @@ func handleCreateSchema(cfg Config, store *DataStore) http.HandlerFunc {
 		if strategy == "" {
 			strategy = "generate"
 		}
+		if format != "ldp_vc" {
+			format = "jwt_vc_json"
+		}
 
 		fields := parseFieldsFromForm(r)
 
@@ -89,6 +93,7 @@ func handleCreateSchema(cfg Config, store *DataStore) http.HandlerFunc {
 			Description:        description,
 			Fields:             fields,
 			SubjectDIDStrategy: strategy,
+			Format:             format,
 			CreatedAt:          time.Now().Format(time.RFC3339),
 		}
 
@@ -143,7 +148,20 @@ func handleRegisterSchema(cfg Config, store *DataStore) http.HandlerFunc {
 			return
 		}
 
-		// Append to credential-issuer-metadata.conf
+		if schema.EffectiveFormat() == "ldp_vc" {
+			// ldp_vc schemas are served by the portal's own OID4VCI endpoint.
+			// No Walt.id config change or container restart needed.
+			schema.RegisteredWithIssuerAPI = true
+			store.SaveSchema(schema)
+			log.Printf("Activated ldp_vc schema %s (portal OID4VCI)", schema.TypeName)
+			renderPartial(w, "toast.html", map[string]any{
+				"Message": fmt.Sprintf("Schema '%s' activated for ldp_vc issuance.", schema.DisplayName),
+				"Color":   "green",
+			})
+			return
+		}
+
+		// jwt_vc_json: append to credential-issuer-metadata.conf and restart Walt.id issuer-api
 		if err := appendCredentialType(cfg.IssuerAPIConfigDir, schema); err != nil {
 			log.Printf("Failed to update issuer-api config: %v", err)
 			renderPartial(w, "toast.html", map[string]any{

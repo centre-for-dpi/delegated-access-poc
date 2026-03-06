@@ -1,3 +1,9 @@
 # Go binaries built on host
 waltid-identity/docker-compose/issuer-portal/issuer-portal
 waltid-identity/docker-compose/verification-adapter-waltid/verification-adapter-waltid
+
+# IDE
+.vscode
+
+# LLM
+.claude

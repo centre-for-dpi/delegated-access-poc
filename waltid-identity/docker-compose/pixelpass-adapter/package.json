@@ -1,0 +1,18 @@
+{
+  "name": "pixelpass-adapter",
+  "version": "1.0.0",
+  "description": "Bridges Walt.id JWT VCs to PixelPass-encoded QR codes for Inji Verify offline scanning",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "cbor-x": "^1.5.9",
+    "express": "^4.19.2",
+    "express-session": "^1.18.0",
+    "qrcode": "^1.5.4"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

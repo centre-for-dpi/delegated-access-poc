@@ -46,6 +46,25 @@
     </div>
 
     <div>
+        <label class="block text-xs font-medium text-gray-500 mb-2">Credential Format</label>
+        <div class="flex gap-4">
+            <label class="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
+                <input type="radio" name="credentialFormat" value="jwt_vc_json" checked
+                       class="text-primary-400 focus:ring-primary-200">
+                <span>JWT (<code class="text-xs bg-gray-100 px-1 rounded">jwt_vc_json</code>) — via Walt.id issuer-api</span>
+            </label>
+            <label class="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
+                <input type="radio" name="credentialFormat" value="ldp_vc"
+                       class="text-primary-400 focus:ring-primary-200">
+                <span>JSON-LD (<code class="text-xs bg-gray-100 px-1 rounded">ldp_vc</code>) — Ed25519Signature2020, Inji-compatible</span>
+            </label>
+        </div>
+        <p class="text-xs text-gray-300 mt-1">
+            ldp_vc credentials carry an embedded cryptographic proof and can be verified offline via PixelPass / Inji Verify.
+        </p>
+    </div>
+
+    <div>
         <label class="block text-xs font-medium text-gray-500 mb-2">Credential Subject DID Strategy</label>
         <div class="flex gap-4">
             <label class="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">

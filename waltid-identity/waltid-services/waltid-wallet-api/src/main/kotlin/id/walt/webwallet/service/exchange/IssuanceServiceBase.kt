@@ -47,6 +47,10 @@ abstract class IssuanceServiceBase {
                 credential,
             )
 
+            CredentialFormat.ldp_vc -> getLdpVcCredentialDataResult(
+                credential,
+            )
+
             else -> getDefaultCredentialDataResult(
                 credential,
                 manifest,
@@ -87,6 +91,19 @@ abstract class IssuanceServiceBase {
             document = mDoc.toCBORHex(),
             type = docType,
             format = CredentialFormat.mso_mdoc,
+        )
+    }
+
+    private fun getLdpVcCredentialDataResult(
+        credential: String,
+    ): CredentialDataResult {
+        val vc = kotlinx.serialization.json.Json.parseToJsonElement(credential).jsonObject
+        val credentialId = vc["id"]?.jsonPrimitive?.content?.takeIf { it.isNotBlank() } ?: randomUUIDString()
+        return CredentialDataResult(
+            id = credentialId,
+            document = credential,
+            type = "ldp_vc",
+            format = CredentialFormat.ldp_vc,
         )
     }
 

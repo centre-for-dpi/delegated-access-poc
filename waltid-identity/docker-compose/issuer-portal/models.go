@@ -15,6 +15,93 @@ import (
 	"time"
 )
 
+// --- OID4VCI session types (for ldp_vc issuance) ---
+
+// ldpVCSession holds all state needed to produce a signed ldp_vc when the
+// wallet calls POST /oidc/credential.
+type ldpVCSession struct {
+	IssuerID           string
+	SchemaID           string
+	CredentialData     map[string]any // unsigned VC body; credentialSubject.id is "" for wallet strategy
+	SubjectDIDStrategy string         // "generate" or "wallet"
+	PreGeneratedDID    string         // set when strategy == "generate"
+	SubjectName        string
+	StatusListIndex    int
+	OfferURL           string
+	FieldValues        map[string]any
+	ExpiresAt          time.Time
+}
+
+// ldpVCSessionStore maps pre-auth codes and access tokens to pending sessions.
+// Both maps are in-memory only; sessions expire after 15 minutes.
+type ldpVCSessionStore struct {
+	mu        sync.Mutex
+	byPreAuth map[string]*ldpVCSession
+	byToken   map[string]*ldpVCSession
+}
+
+func newLdpVCSessionStore() *ldpVCSessionStore {
+	s := &ldpVCSessionStore{
+		byPreAuth: make(map[string]*ldpVCSession),
+		byToken:   make(map[string]*ldpVCSession),
+	}
+	go s.reap()
+	return s
+}
+
+func (s *ldpVCSessionStore) storePreAuth(code string, sess *ldpVCSession) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.byPreAuth[code] = sess
+}
+
+// exchangePreAuth validates a pre-auth code, removes it, and issues a new access token.
+func (s *ldpVCSessionStore) exchangePreAuth(code string) (*ldpVCSession, string, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	sess, ok := s.byPreAuth[code]
+	if !ok || time.Now().After(sess.ExpiresAt) {
+		delete(s.byPreAuth, code)
+		return nil, "", false
+	}
+	delete(s.byPreAuth, code)
+	token := generateID()
+	sess.ExpiresAt = time.Now().Add(15 * time.Minute)
+	s.byToken[token] = sess
+	return sess, token, true
+}
+
+// consumeToken validates an access token, removes it (one-use), and returns the session.
+func (s *ldpVCSessionStore) consumeToken(token string) (*ldpVCSession, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	sess, ok := s.byToken[token]
+	if !ok || time.Now().After(sess.ExpiresAt) {
+		delete(s.byToken, token)
+		return nil, false
+	}
+	delete(s.byToken, token)
+	return sess, true
+}
+
+func (s *ldpVCSessionStore) reap() {
+	for range time.Tick(5 * time.Minute) {
+		now := time.Now()
+		s.mu.Lock()
+		for k, v := range s.byPreAuth {
+			if now.After(v.ExpiresAt) {
+				delete(s.byPreAuth, k)
+			}
+		}
+		for k, v := range s.byToken {
+			if now.After(v.ExpiresAt) {
+				delete(s.byToken, k)
+			}
+		}
+		s.mu.Unlock()
+	}
+}
+
 // IssuerProfile represents an onboarded issuer with their key material and DID.
 type IssuerProfile struct {
 	ID        string          `json:"id"`
@@ -44,8 +131,17 @@ type CredentialSchema struct {
 	Description             string            `json:"description"`
 	Fields                  []FieldDefinition `json:"fields"`
 	SubjectDIDStrategy      string            `json:"subjectDidStrategy"` // "generate" or "wallet"
+	Format                  string            `json:"format"`             // "jwt_vc_json" or "ldp_vc"; empty defaults to jwt_vc_json
 	RegisteredWithIssuerAPI bool              `json:"registeredWithIssuerApi"`
 	CreatedAt               string            `json:"createdAt"`
+}
+
+// EffectiveFormat returns the resolved credential format, defaulting to jwt_vc_json.
+func (s *CredentialSchema) EffectiveFormat() string {
+	if s.Format == "ldp_vc" {
+		return "ldp_vc"
+	}
+	return "jwt_vc_json"
 }
 
 // IssuedCredential tracks a credential that was issued through this portal.
@@ -219,6 +315,19 @@ func (ds *DataStore) ListAllRegisteredSchemas() []map[string]any {
 			"fieldCount":         len(s.Fields),
 			"subjectDidStrategy": s.SubjectDIDStrategy,
 		})
+	}
+	return result
+}
+
+// ListAllLdpVcSchemas returns all schemas with format == ldp_vc that are marked as registered.
+func (ds *DataStore) ListAllLdpVcSchemas() []*CredentialSchema {
+	ds.mu.RLock()
+	defer ds.mu.RUnlock()
+	var result []*CredentialSchema
+	for _, s := range ds.schemas {
+		if s.EffectiveFormat() == "ldp_vc" && s.RegisteredWithIssuerAPI {
+			result = append(result, s)
+		}
 	}
 	return result
 }

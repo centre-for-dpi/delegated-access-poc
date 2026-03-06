@@ -244,6 +244,7 @@ services:
       SERVICE_HOST: $SERVICE_HOST
       ISSUER_API_PORT: $ISSUER_API_PORT
       DEMO_WALLET_FRONTEND_PORT: $DEMO_WALLET_FRONTEND_PORT
+      GO_WALLET_PORT: $GO_WALLET_PORT
       ISSUER_API_CONFIG_DIR: /issuer-api-config
     extra_hosts:
       - "$SERVICE_HOST:host-gateway"
@@ -270,6 +271,126 @@ services:
       ISSUER_PORTAL_PORT: $ISSUER_PORTAL_PORT
     extra_hosts:
       - "$SERVICE_HOST:host-gateway"
+
+  inji-verify-postgres:
+    image: postgres:13
+    profiles:
+      - apps
+      - identity
+      - all
+    healthcheck:
+      test: ["CMD", "pg_isready", "-q", "-U", "inji_user"]
+      interval: 5s
+      timeout: 1s
+      retries: 5
+    restart: always
+    environment:
+      POSTGRES_DB: inji_verify
+      POSTGRES_USER: inji_user
+      POSTGRES_PASSWORD: inji_pass
+    volumes:
+      - inji-verify-db:/var/lib/postgresql/data
+
+  inji-verify-service:
+    image: mosipid/inji-verify-service:0.16.0
+    profiles:
+      - apps
+      - identity
+      - all
+    pull_policy: missing
+    depends_on:
+      inji-verify-postgres:
+        condition: service_healthy
+      caddy:
+        condition: service_started
+    # 'verify-service' alias lets inji-verify-ui's bundled nginx resolve the upstream
+    networks:
+      default:
+        aliases:
+          - verify-service
+    environment:
+      DATABASE_HOST: inji-verify-postgres
+      DATABASE_PORT: 5432
+      DATABASE_NAME: inji_verify
+      DATABASE_SCHEMA: verify
+      DATABASE_USERNAME: inji_user
+      DATABASE_PASSWORD: inji_pass
+      INJI_VP_REQUEST_LONG_POLLING_TIMEOUT: 55000
+      INJI_VP_SUBMISSION_BASE_URL: "http://$SERVICE_HOST:$INJI_VERIFY_UI_PORT/v1/verify"
+      INJI_DID_VERIFY_URI: "did:web:$SERVICE_HOST%3A$INJI_VERIFY_UI_PORT:v1:verify"
+      INJI_DID_VERIFY_PUBLIC_KEY_URI: "did:web:$SERVICE_HOST%3A$INJI_VERIFY_UI_PORT:v1:verify#key-0"
+      INJI_KEYSTORE_FILE_PASS: mosip
+    extra_hosts:
+      - "$SERVICE_HOST:host-gateway"
+
+  inji-verify-ui:
+    image: mosipid/inji-verify-ui:0.16.0
+    profiles:
+      - apps
+      - identity
+      - all
+    pull_policy: missing
+    depends_on:
+      - inji-verify-service
+      - caddy
+    entrypoint:
+      - /bin/sh
+      - -c
+      - "envsubst < /etc/inji-verify/config.template.json > /usr/share/nginx/html/assets/config.json && nginx -g 'daemon off;'"
+    environment:
+      DEFAULT_TITLE: "Inji Verify"
+      DEFAULT_LANG: en
+      VERIFIABLE_CLAIMS_CONFIG_URL: /assets/config.json
+      VP_SUBMISSION_SUPPORTED: "true"
+      CLIENT_ID: inji-verify-ui
+      CLIENT_ID_DID: "did:web:$SERVICE_HOST%3A$INJI_VERIFY_UI_PORT:v1:verify"
+      DISPLAY_TIMEOUT: 120000
+      SERVICE_HOST: $SERVICE_HOST
+      INJI_VERIFY_UI_PORT: $INJI_VERIFY_UI_PORT
+    volumes:
+      - ./inji-verify/config.template.json:/etc/inji-verify/config.template.json
+    extra_hosts:
+      - "$SERVICE_HOST:host-gateway"
+
+  pixelpass-adapter:
+    build:
+      context: ./pixelpass-adapter
+      dockerfile: Dockerfile
+    profiles:
+      - apps
+      - identity
+      - all
+    depends_on:
+      - caddy
+    environment:
+      PORT: $PIXELPASS_ADAPTER_PORT
+      SERVICE_HOST: $SERVICE_HOST
+      WALLET_API_URL: "http://go-wallet:$GO_WALLET_PORT"
+      INJI_VERIFY_URL: "http://$SERVICE_HOST:$INJI_VERIFY_UI_PORT"
+    extra_hosts:
+      - "$SERVICE_HOST:host-gateway"
+
+  go-wallet:
+    build:
+      context: ./go-wallet
+      dockerfile: Dockerfile
+    profiles:
+      - apps
+      - identity
+      - all
+    depends_on:
+      - caddy
+    environment:
+      PORT: $GO_WALLET_PORT
+      SERVICE_HOST: $SERVICE_HOST
+      ISSUER_PORTAL_URL: "http://issuer-portal:$ISSUER_PORTAL_PORT"
+      PIXELPASS_ADAPTER_URL: "http://pixelpass-adapter:$PIXELPASS_ADAPTER_PORT"
+      PIXELPASS_ADAPTER_PORT: $PIXELPASS_ADAPTER_PORT
+      INJI_VERIFY_UI_PORT: $INJI_VERIFY_UI_PORT
+    extra_hosts:
+      - "$SERVICE_HOST:host-gateway"
+    volumes:
+      - go-wallet-data:/app/data
 
   opa-server:
     platform: linux/amd64
@@ -348,6 +469,21 @@ services:
         protocol: tcp
         mode: host
 
+      - target: "$INJI_VERIFY_UI_PORT"
+        published: $INJI_VERIFY_UI_PORT # inji-verify-ui (+ inji-verify-service via /v1/verify/*)
+        protocol: tcp
+        mode: host
+
+      - target: "$PIXELPASS_ADAPTER_PORT"
+        published: $PIXELPASS_ADAPTER_PORT # pixelpass-adapter
+        protocol: tcp
+        mode: host
+
+      - target: "$GO_WALLET_PORT"
+        published: $GO_WALLET_PORT # go-wallet
+        protocol: tcp
+        mode: host
+
       - target: "$PG_ADMIN_PORT"
         published: $PG_ADMIN_PORT # pg-admin
         protocol: tcp
@@ -360,3 +496,5 @@ volumes:
   vault_data:
   valkey_data:
   issuer-portal-data:
+  go-wallet-data:
+  inji-verify-db:

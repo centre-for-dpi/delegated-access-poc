@@ -4,6 +4,7 @@ import id.walt.oid4vc.OpenID4VCI
 import id.walt.oid4vc.data.OpenIDProviderMetadata
 import id.walt.oid4vc.requests.BatchCredentialRequest
 import id.walt.oid4vc.requests.CredentialRequest
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.jsonPrimitive
 
 object CredentialOfferProcessor {
@@ -56,8 +57,9 @@ object CredentialOfferProcessor {
             )
         }
 
-        if (credentialResponse.credentialResponse.credential!!.jsonPrimitive.content.contains("~"))
-            require(credentialResponse.credentialResponse.credential!!.jsonPrimitive.content.last() == '~') {
+        val cred = credentialResponse.credentialResponse.credential!!
+        if (cred is JsonPrimitive && cred.content.contains("~"))
+            require(cred.content.last() == '~') {
                 "SD-JWT Credential must end with '~'"
             }
 

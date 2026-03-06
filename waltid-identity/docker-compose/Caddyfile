@@ -61,6 +61,30 @@
     reverse_proxy http://verification-portal:{$VERIFICATION_PORTAL_PORT}
 }
 
+# Inji Verify — routes /v1/verify/* to Java verify-service, everything else to React UI
+# vc-verification is intercepted by the pixelpass-adapter first so it can detect
+# JSON-LD credentials encoded in PixelPass QRs (which arrive as application/vc+sd-jwt)
+# and re-submit them to the Java service as application/vc+ld+json.
+:{$INJI_VERIFY_UI_PORT} {
+    route /v1/verify/vc-verification {
+        reverse_proxy http://pixelpass-adapter:{$PIXELPASS_ADAPTER_PORT}
+    }
+    route /v1/verify/* {
+        reverse_proxy http://inji-verify-service:8080
+    }
+    reverse_proxy http://inji-verify-ui:8000
+}
+
+# PixelPass Adapter — offline QR generator for Walt.id credentials
+:{$PIXELPASS_ADAPTER_PORT} {
+    reverse_proxy http://pixelpass-adapter:{$PIXELPASS_ADAPTER_PORT}
+}
+
+# Go Wallet (ldp_vc credential wallet)
+:{$GO_WALLET_PORT} {
+    reverse_proxy http://go-wallet:{$GO_WALLET_PORT}
+}
+
 # pgAdmin
 :{$PG_ADMIN_PORT} {
     reverse_proxy http://phpmyadmin:{$PG_ADMIN_PORT}

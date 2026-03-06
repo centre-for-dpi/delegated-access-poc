@@ -7,6 +7,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 )
@@ -89,7 +90,7 @@ func handleIssueForm(cfg Config, store *DataStore) http.HandlerFunc {
 	}
 }
 
-func handleIssueCredential(cfg Config, store *DataStore) http.HandlerFunc {
+func handleIssueCredential(cfg Config, store *DataStore, sessions *ldpVCSessionStore) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		issuerID := r.PathValue("issuerID")
 		schemaID := r.PathValue("schemaID")
@@ -112,6 +113,14 @@ func handleIssueCredential(cfg Config, store *DataStore) http.HandlerFunc {
 		}
 
 		subjectName := r.FormValue("subjectName")
+
+		// Branch on credential format
+		if schema.EffectiveFormat() == "ldp_vc" {
+			handleIssueLdpVC(w, r, cfg, store, sessions, issuer, schema, subjectName)
+			return
+		}
+
+		// jwt_vc_json path: delegate to Walt.id issuer-api via OID4VCI
 
 		// Generate subject DID if strategy is "generate"
 		var subjectDID string
@@ -146,7 +155,7 @@ func handleIssueCredential(cfg Config, store *DataStore) http.HandlerFunc {
 				"id":   issuer.IssuerDID,
 				"name": issuer.Name,
 			},
-			"issuanceDate":      time.Now().Format(time.RFC3339),
+			"issuanceDate":      time.Now().UTC().Format(time.RFC3339),
 			"credentialSubject": credSubject,
 			"credentialStatus": map[string]any{
 				"type":                 "BitstringStatusListEntry",
@@ -368,6 +377,103 @@ func handleCredentialDIDSearch(cfg Config, store *DataStore) http.HandlerFunc {
 			"FieldName":   fieldName,
 		})
 	}
+}
+
+// handleIssueLdpVC builds a pre-authorized OID4VCI offer for an ldp_vc schema.
+// The credential is signed later by /oidc/credential when the wallet claims it.
+func handleIssueLdpVC(w http.ResponseWriter, r *http.Request, cfg Config, store *DataStore, sessions *ldpVCSessionStore, issuer *IssuerProfile, schema *CredentialSchema, subjectName string) {
+	// Generate subject DID now only for "generate" strategy
+	var preGeneratedDID string
+	if schema.SubjectDIDStrategy == "generate" {
+		did, err := generateSubjectDID(cfg)
+		if err != nil {
+			log.Printf("Failed to generate subject DID for ldp_vc: %v", err)
+			renderPartial(w, "error.html", map[string]any{
+				"Error": "Failed to generate subject DID: " + err.Error(),
+			})
+			return
+		}
+		preGeneratedDID = did
+	}
+
+	// Allocate status list index
+	bs := store.GetBitstring(issuer.ID)
+	statusIndex := bs.AllocateIndex()
+
+	// Build unsigned credential data (issuer as plain DID string; no credentialStatus)
+	credSubject := buildCredentialSubject(schema, r, preGeneratedDID)
+	credentialData := map[string]any{
+		"@context": []any{
+			"https://www.w3.org/2018/credentials/v1",
+			"https://w3id.org/security/suites/ed25519-2020/v1",
+			// @vocab ensures custom types and fields get proper IRI expansion
+			// so all JSON-LD processors produce identical canonical N-quads
+			map[string]any{"@vocab": "https://example.org/vocab#"},
+		},
+		"id":   fmt.Sprintf("urn:uuid:%s", generateID()),
+		"type": []string{"VerifiableCredential", schema.TypeName},
+		// issuer must be a plain DID string for Ed25519Signature2020 canonical form
+		"issuer":            issuer.IssuerDID,
+		"issuanceDate":      time.Now().UTC().Format(time.RFC3339),
+		"credentialSubject": credSubject,
+	}
+
+	fieldValues := collectFieldValues(schema, r)
+
+	// Create pre-auth code and session
+	preAuthCode := generateID()
+	offerURL := buildLdpVcOfferURL(cfg, schema, preAuthCode)
+
+	sess := &ldpVCSession{
+		IssuerID:           issuer.ID,
+		SchemaID:           schema.ID,
+		CredentialData:     credentialData,
+		SubjectDIDStrategy: schema.SubjectDIDStrategy,
+		PreGeneratedDID:    preGeneratedDID,
+		SubjectName:        subjectName,
+		StatusListIndex:    statusIndex,
+		OfferURL:           offerURL,
+		FieldValues:        fieldValues,
+		ExpiresAt:          time.Now().Add(15 * time.Minute),
+	}
+	sessions.storePreAuth(preAuthCode, sess)
+
+	// For ldp_vc, point to the Go wallet instead of the demo wallet
+	goWalletPort := envOr("GO_WALLET_PORT", "7111")
+	walletURL := fmt.Sprintf("http://%s:%s/claim?offer=%s", cfg.ServiceHost, goWalletPort, url.QueryEscape(offerURL))
+
+	// Return a placeholder credential record for the UI (not persisted yet — saved on /oidc/credential)
+	log.Printf("Created ldp_vc offer for schema %s (code=%s, index=%d)", schema.TypeName, preAuthCode[:8], statusIndex)
+
+	renderPartial(w, "issue_result.html", map[string]any{
+		"Credential": &IssuedCredential{
+			TypeName:        schema.TypeName,
+			SubjectName:     subjectName,
+			StatusListIndex: statusIndex,
+			Status:          "pending",
+			OfferURL:        offerURL,
+		},
+		"OfferURL":  offerURL,
+		"WalletURL": walletURL,
+		"Schema":    schema,
+		"Issuer":    issuer,
+	})
+}
+
+// buildLdpVcOfferURL constructs the openid-credential-offer:// URL for the portal's own OID4VCI server.
+func buildLdpVcOfferURL(cfg Config, schema *CredentialSchema, preAuthCode string) string {
+	portalExternal := "http://" + cfg.ServiceHost + ":" + cfg.Port
+	offer := map[string]any{
+		"credential_issuer": portalExternal,
+		"credential_configuration_ids": []string{schema.TypeName + "_ldp_vc"},
+		"grants": map[string]any{
+			"urn:ietf:params:oauth:grant-type:pre-authorized_code": map[string]any{
+				"pre-authorized_code": preAuthCode,
+			},
+		},
+	}
+	offerJSON, _ := json.Marshal(offer)
+	return "openid-credential-offer://?credential_offer=" + url.QueryEscape(string(offerJSON))
 }
 
 // buildWalletClaimURL constructs the demo wallet deep link for claiming a credential.

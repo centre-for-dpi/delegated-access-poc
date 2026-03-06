@@ -19,6 +19,7 @@ type Config struct {
 	InternalURL            string // Docker-internal URL for status list references
 	DataDir                string
 	IssuerAPIConfigDir     string // Shared volume for issuer-api HOCON config
+	SignAPIToken           string // Optional bearer token for POST /api/sign/ldp
 }
 
 func envOr(key, fallback string) string {
@@ -108,9 +109,11 @@ func main() {
 		InternalURL:            "http://issuer-portal:" + port,
 		DataDir:                envOr("DATA_DIR", "/app/data"),
 		IssuerAPIConfigDir:     envOr("ISSUER_API_CONFIG_DIR", "/issuer-api-config"),
+		SignAPIToken:           envOr("SIGN_API_TOKEN", ""),
 	}
 
 	store := NewDataStore(cfg.DataDir)
+	sessions := newLdpVCSessionStore()
 	initTemplates()
 
 	mux := http.NewServeMux()
@@ -132,7 +135,7 @@ func main() {
 
 	// Credential issuance
 	mux.HandleFunc("GET /issuers/{issuerID}/schemas/{schemaID}/issue", handleIssueForm(cfg, store))
-	mux.HandleFunc("POST /issuers/{issuerID}/schemas/{schemaID}/issue", handleIssueCredential(cfg, store))
+	mux.HandleFunc("POST /issuers/{issuerID}/schemas/{schemaID}/issue", handleIssueCredential(cfg, store, sessions))
 	mux.HandleFunc("GET /issuers/{issuerID}/credentials/dids", handleCredentialDIDSearch(cfg, store))
 
 	// Credential registry + revocation
@@ -143,7 +146,13 @@ func main() {
 	// Per-issuer status list credential endpoint (verifier fetches this)
 	mux.HandleFunc("GET /issuers/{issuerID}/status/revocation/1", handleGetStatusListCredential(cfg, store))
 
+	// OID4VCI endpoints (ldp_vc issuance — served by this portal, not Walt.id)
+	mux.HandleFunc("GET /.well-known/openid-credential-issuer", handleOIDCIssuerMetadata(cfg, store))
+	mux.HandleFunc("POST /oidc/token", handleOIDCToken(sessions))
+	mux.HandleFunc("POST /oidc/credential", handleOIDCCredential(cfg, store, sessions))
+
 	// JSON API endpoints (for scripts and programmatic access)
+	mux.HandleFunc("POST /api/sign/ldp", handleAPISignLdp(cfg, store))
 	mux.HandleFunc("POST /api/issuers", handleAPIOnboardIssuer(cfg, store))
 	mux.HandleFunc("POST /api/issuers/import", handleAPIImportIssuer(cfg, store))
 	mux.HandleFunc("GET /api/issuers", handleAPIListIssuers(cfg, store))

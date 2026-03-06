@@ -219,11 +219,32 @@ func handleAPIQueryStatus(cfg Config, store *DataStore) http.HandlerFunc {
 	}
 }
 
+// publicIssuerProfile is a safe view of IssuerProfile that omits the private key.
+type publicIssuerProfile struct {
+	ID        string `json:"id"`
+	Name      string `json:"name"`
+	KeyType   string `json:"keyType"`
+	DIDMethod string `json:"didMethod"`
+	IssuerDID string `json:"issuerDid"`
+	CreatedAt string `json:"createdAt"`
+}
+
 func handleAPIListIssuers(cfg Config, store *DataStore) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		issuers := store.ListIssuers()
+		public := make([]publicIssuerProfile, len(issuers))
+		for i, p := range issuers {
+			public[i] = publicIssuerProfile{
+				ID:        p.ID,
+				Name:      p.Name,
+				KeyType:   p.KeyType,
+				DIDMethod: p.DIDMethod,
+				IssuerDID: p.IssuerDID,
+				CreatedAt: p.CreatedAt,
+			}
+		}
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(issuers)
+		json.NewEncoder(w).Encode(public)
 	}
 }
 

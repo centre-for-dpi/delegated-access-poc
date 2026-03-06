@@ -1,0 +1,47 @@
+{
+  "verifyServiceUrl": "http://${SERVICE_HOST}:${INJI_VERIFY_UI_PORT}/v1/verify",
+  "verifiableClaims": [
+    {
+      "name": "Delegated Access (Identity + Delegation)",
+      "purpose": "Verify delegated authority — identity credential plus delegation credential",
+      "clientIdScheme": "did",
+      "definition": {
+        "id": "delegated-access-v1",
+        "purpose": "Verify delegated access authority for a child or other dependent",
+        "format": {
+          "jwt_vc_json": { "alg": ["EdDSA"] }
+        },
+        "input_descriptors": [
+          {
+            "id": "identity-vc",
+            "name": "Identity Credential",
+            "purpose": "Proof of identity for the person on whose behalf access is being delegated",
+            "format": { "jwt_vc_json": { "alg": ["EdDSA"] } },
+            "constraints": {
+              "fields": [
+                {
+                  "path": ["$.vc.credentialSubject.id"],
+                  "purpose": "Subject DID for linking delegation"
+                }
+              ]
+            }
+          },
+          {
+            "id": "delegation-vc",
+            "name": "Delegation Credential",
+            "purpose": "Authorization to act on behalf of another person",
+            "format": { "jwt_vc_json": { "alg": ["EdDSA"] } },
+            "constraints": {
+              "fields": [
+                {
+                  "path": ["$.vc.credentialSubject"],
+                  "purpose": "Delegation subject with DID reference to identity credential"
+                }
+              ]
+            }
+          }
+        ]
+      }
+    }
+  ]
+}

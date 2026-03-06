@@ -1,0 +1,47 @@
+{{define "layout"}}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{.Title}} - Go Wallet</title>
+    <script src="https://unpkg.com/htmx.org@2.0.4"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        primary: {
+                            50: '#E6F6FF', 100: '#BAE3FF', 200: '#7CC4FA',
+                            300: '#47A3F3', 400: '#0573F0', 500: '#0A63C9',
+                            600: '#0552B5', 700: '#03449E', 800: '#01337D',
+                            900: '#002159',
+                        },
+                    },
+                    fontFamily: {
+                        sans: ['Inter', 'system-ui', '-apple-system', 'sans-serif'],
+                    },
+                },
+            },
+        }
+    </script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        .htmx-indicator { display: none; }
+        .htmx-request .htmx-indicator { display: block; }
+        .htmx-request .htmx-hide-on-request { display: none; }
+        .credential-card {
+            background: linear-gradient(135deg, #0573F0 0%, #03449E 100%);
+            border-top: 0.5px solid rgba(255,255,255,0.3);
+        }
+        .credential-card:hover { transform: scale(1.03); }
+    </style>
+</head>
+<body class="min-h-screen bg-gray-50 font-sans">
+    {{block "content" .}}{{end}}
+</body>
+</html>
+{{end}}

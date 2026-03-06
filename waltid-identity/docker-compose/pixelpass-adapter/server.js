@@ -303,12 +303,98 @@ app.post('/api/qr', async (req, res) => {
   }
 });
 
+// JSON API: encode multiple pre-signed ldp_vc credentials as a single PixelPass QR
+app.post('/api/qr/multi', async (req, res) => {
+  const { credentials } = req.body;
+  if (!Array.isArray(credentials) || credentials.length < 2) {
+    return res.status(400).json({ error: 'credentials array with at least 2 items required' });
+  }
+  for (let i = 0; i < credentials.length; i++) {
+    if (!credentials[i].proof) {
+      const types = (credentials[i].type || []).filter(t => t !== 'VerifiableCredential');
+      return res.status(400).json({ error: `Credential ${i} (${types[0] || 'unknown'}) has no proof — only signed ldp_vc credentials can be encoded` });
+    }
+  }
+  try {
+    const encoded = pixelPassEncode(credentials);
+    const qr = await QRCode.toDataURL(encoded, { errorCorrectionLevel: 'L', width: 500 });
+    res.json({ encoded, qr, count: credentials.length });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// --- Same-subject DID constraint check ---
+
+// Recursively search an object for string values matching any of the target DIDs.
+function findDidMatches(obj, targetDids, path = '') {
+  const matches = [];
+  if (typeof obj === 'string') {
+    if (targetDids.includes(obj)) matches.push({ path, did: obj });
+    return matches;
+  }
+  if (obj && typeof obj === 'object') {
+    for (const [key, val] of Object.entries(obj)) {
+      const childPath = path ? `${path}.${key}` : key;
+      matches.push(...findDidMatches(val, targetDids, childPath));
+    }
+  }
+  return matches;
+}
+
+function checkSameSubject(credentials) {
+  // For each credential, check if its credentialSubject.id appears (as a
+  // cross-reference) anywhere in another credential's credentialSubject
+  // (excluding that other credential's own id field).
+  for (let i = 0; i < credentials.length; i++) {
+    const subjA = credentials[i].credentialSubject;
+    if (!subjA || typeof subjA.id !== 'string' || !subjA.id.startsWith('did:')) continue;
+    const didA = subjA.id;
+    const typeA = (credentials[i].type || []).filter(t => t !== 'VerifiableCredential')[0] || 'unknown';
+
+    for (let j = 0; j < credentials.length; j++) {
+      if (i === j) continue;
+      const subjB = credentials[j].credentialSubject;
+      if (!subjB) continue;
+
+      // Search credential B's subject (excluding its own id) for credential A's DID
+      const searchObj = { ...subjB };
+      delete searchObj.id;
+      const matches = findDidMatches(searchObj, [didA]);
+      if (matches.length > 0) {
+        const typeB = (credentials[j].type || []).filter(t => t !== 'VerifiableCredential')[0] || 'unknown';
+        return {
+          matched: true,
+          identityDid: didA,
+          matchPath: `credentialSubject.${matches[0].path}`,
+          identityType: typeA,
+          delegationType: typeB,
+        };
+      }
+    }
+  }
+
+  return { matched: false, reason: 'No cross-credential DID reference found' };
+}
+
+// Verify a single credential via inji-verify-service
+async function verifySingleCredential(credential) {
+  const body = JSON.stringify(credential);
+  const upstream = await fetch(`${INJI_VERIFY_SERVICE_URL}/v1/verify/vc-verification`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/vc+ld+json', 'Content-Length': Buffer.byteLength(body) },
+    body,
+  });
+  return upstream.json();
+}
+
 // --- vc-verification proxy ---
 //
 // @mosip/pixelpass.decode() always returns a STRING, so Inji Verify UI always
 // sends Content-Type: application/vc+sd-jwt for PixelPass-decoded credentials.
 // We detect JSON-LD objects (ldp_vc) by checking for @context and re-submit
 // them to inji-verify-service as application/vc+ld+json.
+// Arrays of credentials are verified individually with same_subject constraint.
 const INJI_VERIFY_SERVICE_URL = process.env.INJI_VERIFY_SERVICE_URL || 'http://inji-verify-service:8080';
 
 app.post('/v1/verify/vc-verification', async (req, res) => {
@@ -316,35 +402,55 @@ app.post('/v1/verify/vc-verification', async (req, res) => {
   req.on('data', chunk => { rawBody += chunk; });
   req.on('end', async () => {
     const contentType = req.headers['content-type'] || '';
-    let credential = null;
+    let parsed = null;
 
     if (contentType.includes('vc+sd-jwt') || contentType.includes('json')) {
-      try {
-        const parsed = JSON.parse(rawBody);
-        if (parsed && typeof parsed === 'object' && parsed['@context']) {
-          credential = parsed;
-        }
-      } catch (_) { /* not JSON */ }
+      try { parsed = JSON.parse(rawBody); } catch (_) { /* not JSON */ }
     }
 
-    if (credential) {
+    // Handle array of credentials (combined QR)
+    if (Array.isArray(parsed)) {
+      console.log(`[vc-verify] Credential array detected (${parsed.length} credentials) — verifying individually`);
+      try {
+        const results = await Promise.all(parsed.map(cred => verifySingleCredential(cred)));
+        const credentialResults = parsed.map((cred, i) => {
+          const types = (cred.type || []).filter(t => t !== 'VerifiableCredential');
+          return {
+            type: types[0] || 'unknown',
+            verificationStatus: results[i].verificationStatus || 'ERROR',
+          };
+        });
+        const allValid = credentialResults.every(r => r.verificationStatus === 'SUCCESS');
+        const sameSubject = checkSameSubject(parsed);
+        const overallStatus = allValid && sameSubject.matched ? 'SUCCESS' : 'INVALID';
+
+        console.log(`[vc-verify] Combined result: ${overallStatus} (signatures: ${allValid}, sameSubject: ${sameSubject.matched})`);
+        res.setHeader('Content-Type', 'application/json');
+        return res.json({
+          verificationStatus: overallStatus,
+          credentialResults,
+          sameSubject,
+        });
+      } catch (err) {
+        console.error('[vc-verify] Combined verification error:', err.message);
+        return res.status(502).json({ verificationStatus: 'ERROR', error: err.message });
+      }
+    }
+
+    // Handle single JSON-LD credential
+    if (parsed && typeof parsed === 'object' && parsed['@context']) {
       console.log('[vc-verify] JSON-LD detected — forwarding as vc+ld+json');
       try {
-        const body = JSON.stringify(credential);
-        const upstream = await fetch(`${INJI_VERIFY_SERVICE_URL}/v1/verify/vc-verification`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/vc+ld+json', 'Content-Length': Buffer.byteLength(body) },
-          body,
-        });
-        const result = await upstream.json();
+        const result = await verifySingleCredential(parsed);
         res.setHeader('Content-Type', 'application/json');
-        return res.status(upstream.status).json(result);
+        return res.json(result);
       } catch (err) {
         console.error('[vc-verify] Forward error:', err.message);
         return res.status(502).json({ verificationStatus: 'ERROR', error: err.message });
       }
     }
 
+    // Pass-through for other formats
     console.log(`[vc-verify] Pass-through (Content-Type: ${contentType})`);
     try {
       const upstream = await fetch(`${INJI_VERIFY_SERVICE_URL}/v1/verify/vc-verification`, {

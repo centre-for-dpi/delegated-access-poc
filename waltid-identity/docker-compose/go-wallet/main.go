@@ -81,6 +81,7 @@ func initTemplates() {
 	pages := []string{
 		"login.html", "register.html", "home.html", "claim.html",
 		"credential_detail.html", "present.html", "present_qr.html",
+		"present_combined_qr.html",
 	}
 	partials := []string{
 		"claim_result.html",
@@ -173,6 +174,7 @@ func main() {
 	mux.HandleFunc("GET /credentials/{credID}", requireLogin(uiSessions, handleCredentialDetail(cfg, store)))
 	mux.HandleFunc("POST /credentials/{credID}/delete", requireLogin(uiSessions, handleDeleteCredential(store)))
 	mux.HandleFunc("GET /present", requireLogin(uiSessions, handlePresent(cfg, store)))
+	mux.HandleFunc("POST /present/combined", requireLogin(uiSessions, handlePresentCombined(cfg, store)))
 	mux.HandleFunc("GET /credentials/{credID}/present", requireLogin(uiSessions, handlePresentQR(cfg, store)))
 
 	// Wallet API routes (pixelpass-adapter compatible — uses API sessions, not UI sessions)
@@ -494,6 +496,90 @@ func handlePresentQR(cfg Config, store *DataStore) http.HandlerFunc {
 			"QRError":       qrError,
 			"InjiVerifyURL": cfg.InjiVerifyURL,
 			"SubjectFields": subjectFields,
+			"Email":         email,
+			"Cfg":           cfg,
+		})
+	}
+}
+
+func handlePresentCombined(cfg Config, store *DataStore) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		email := r.Header.Get("X-User-Email")
+
+		if err := r.ParseForm(); err != nil {
+			http.Error(w, "invalid form", http.StatusBadRequest)
+			return
+		}
+		credIDs := r.Form["credIDs"]
+		if len(credIDs) < 2 {
+			http.Redirect(w, r, "/present", http.StatusSeeOther)
+			return
+		}
+
+		// Load credentials
+		var creds []*WalletCredential
+		var parsedDocs []map[string]any
+		for _, rawID := range credIDs {
+			cred := store.GetCredential(email, rawID)
+			if cred == nil {
+				renderPage(w, "present_combined_qr.html", map[string]any{
+					"Title":   "Combined QR",
+					"QRError": "Credential not found: " + rawID,
+					"Email":   email,
+					"Cfg":     cfg,
+				})
+				return
+			}
+			if cred.ParsedDocument["proof"] == nil {
+				renderPage(w, "present_combined_qr.html", map[string]any{
+					"Title":   "Combined QR",
+					"QRError": cred.TypeName + " has no embedded proof (ldp_vc required)",
+					"Email":   email,
+					"Cfg":     cfg,
+				})
+				return
+			}
+			creds = append(creds, cred)
+			parsedDocs = append(parsedDocs, cred.ParsedDocument)
+		}
+
+		// Call pixelpass-adapter /api/qr/multi
+		qrDataURL := ""
+		encodedLen := 0
+		qrError := ""
+
+		reqBody, _ := json.Marshal(map[string]any{
+			"credentials": parsedDocs,
+		})
+		resp, err := http.Post(cfg.PixelPassAdapterURL+"/api/qr/multi", "application/json", bytes.NewReader(reqBody))
+		if err != nil {
+			qrError = "Failed to connect to PixelPass adapter: " + err.Error()
+		} else {
+			defer resp.Body.Close()
+			body, _ := io.ReadAll(resp.Body)
+			if resp.StatusCode != http.StatusOK {
+				qrError = "PixelPass adapter error: " + string(body)
+			} else {
+				var qrResp struct {
+					Encoded string `json:"encoded"`
+					QR      string `json:"qr"`
+				}
+				if err := json.Unmarshal(body, &qrResp); err != nil {
+					qrError = "Failed to parse QR response"
+				} else {
+					qrDataURL = qrResp.QR
+					encodedLen = len(qrResp.Encoded)
+				}
+			}
+		}
+
+		renderPage(w, "present_combined_qr.html", map[string]any{
+			"Title":         "Combined Presentation",
+			"Credentials":   creds,
+			"QRDataURL":     template.URL(qrDataURL),
+			"EncodedLen":    encodedLen,
+			"QRError":       qrError,
+			"InjiVerifyURL": cfg.InjiVerifyURL,
 			"Email":         email,
 			"Cfg":           cfg,
 		})

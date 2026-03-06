@@ -30,33 +30,79 @@
             <span class="text-sm text-gray-600">Present</span>
         </div>
 
-        <h1 class="text-2xl font-bold text-gray-900 mb-2">Present Credential</h1>
-        <p class="text-sm text-gray-400 mb-8">Select a credential to generate a QR code for Inji Verify</p>
+        <h1 class="text-2xl font-bold text-gray-900 mb-2">Present Credentials</h1>
+        <p class="text-sm text-gray-400 mb-8">Tap a credential for a single QR, or select multiple for a combined delegated access QR</p>
 
         {{if .Credentials}}
+        <form id="combinedForm" method="POST" action="/present/combined">
         <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
             {{range .Credentials}}
-            <a href="/credentials/{{urlEncode .ID}}/present" class="block">
-                <div class="credential-card rounded-2xl shadow-lg p-5 h-40 flex flex-col justify-between transition-transform duration-200 cursor-pointer">
-                    <div>
-                        <p class="text-white text-lg font-bold leading-tight">{{truncate .TypeName 24}}</p>
-                    </div>
-                    <div class="flex items-end justify-between">
-                        <div>
-                            <p class="text-primary-100 text-[10px] uppercase tracking-wider mb-0.5">Issuer</p>
-                            <p class="text-white text-xs opacity-80">{{issuerName .ParsedDocument}}</p>
+            <div class="relative group">
+                <!-- Checkbox overlay -->
+                <label class="absolute top-3 left-3 z-10 cursor-pointer">
+                    <input type="checkbox" name="credIDs" value="{{urlEncode .ID}}"
+                           class="cred-checkbox w-5 h-5 rounded border-2 border-white/50 bg-white/20 text-primary-500
+                                  focus:ring-primary-400 focus:ring-offset-0 cursor-pointer accent-white"
+                           onchange="updateCombinedBar()">
+                </label>
+                <a href="/credentials/{{urlEncode .ID}}/present" class="block">
+                    <div class="credential-card rounded-2xl shadow-lg p-5 h-40 flex flex-col justify-between transition-transform duration-200 cursor-pointer">
+                        <div class="pl-7">
+                            <p class="text-white text-lg font-bold leading-tight">{{truncate .TypeName 24}}</p>
                         </div>
-                        <div class="flex items-center gap-1 text-white/70 text-xs">
-                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm12 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z"></path>
-                            </svg>
-                            QR
+                        <div class="flex items-end justify-between">
+                            <div>
+                                <p class="text-primary-100 text-[10px] uppercase tracking-wider mb-0.5">Issuer</p>
+                                <p class="text-white text-xs opacity-80">{{issuerName .ParsedDocument}}</p>
+                            </div>
+                            <div class="flex items-center gap-1 text-white/70 text-xs">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm12 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z"></path>
+                                </svg>
+                                QR
+                            </div>
                         </div>
                     </div>
-                </div>
-            </a>
+                </a>
+            </div>
             {{end}}
         </div>
+
+        <!-- Sticky bottom bar for combined QR -->
+        <div id="combinedBar" class="hidden fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 shadow-lg px-6 py-4 z-50">
+            <div class="max-w-5xl mx-auto flex items-center justify-between">
+                <div class="flex items-center gap-3">
+                    <div class="w-10 h-10 rounded-full bg-primary-50 flex items-center justify-center">
+                        <svg class="w-5 h-5 text-primary-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"></path>
+                        </svg>
+                    </div>
+                    <div>
+                        <p class="text-sm font-semibold text-gray-800"><span id="selectedCount">0</span> credentials selected</p>
+                        <p class="text-xs text-gray-400">Combined delegated access QR</p>
+                    </div>
+                </div>
+                <button type="submit"
+                        class="rounded-xl bg-gradient-to-r from-primary-400 to-primary-700 px-6 py-3 text-sm font-semibold text-white hover:from-primary-500 hover:to-primary-800 shadow-md transition-all">
+                    Generate Combined QR
+                </button>
+            </div>
+        </div>
+        </form>
+
+        <script>
+        function updateCombinedBar() {
+            const checked = document.querySelectorAll('.cred-checkbox:checked');
+            const bar = document.getElementById('combinedBar');
+            const count = document.getElementById('selectedCount');
+            count.textContent = checked.length;
+            bar.classList.toggle('hidden', checked.length < 2);
+        }
+        // Prevent checkbox clicks from following the card link
+        document.querySelectorAll('.cred-checkbox').forEach(cb => {
+            cb.addEventListener('click', e => e.stopPropagation());
+        });
+        </script>
         {{else}}
         <!-- Empty state -->
         <div class="text-center py-20">

@@ -30,7 +30,16 @@
             <span class="text-sm text-gray-600">Present</span>
         </div>
 
-        <h1 class="text-2xl font-bold text-gray-900 mb-2">Present Credentials</h1>
+        <div class="flex items-center justify-between mb-2">
+            <h1 class="text-2xl font-bold text-gray-900">Present Credentials</h1>
+            <a href="/present/oid4vp"
+               class="inline-flex items-center gap-2 rounded-lg border border-primary-200 bg-primary-50 px-4 py-2 text-xs font-medium text-primary-700 hover:bg-primary-100 transition-colors">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"></path>
+                </svg>
+                OID4VP
+            </a>
+        </div>
         <p class="text-sm text-gray-400 mb-8">Tap a credential for a single QR, or select multiple for a combined delegated access QR</p>
 
         {{if .Credentials}}

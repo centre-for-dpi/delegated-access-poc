@@ -1,0 +1,8 @@
+{{define "content"}}
+<h1 class="text-xl font-bold text-gray-900 mt-2 mb-4">Verification Result</h1>
+{{if .Error}}
+<div class="bg-red-50 border border-red-100 rounded-lg p-3 text-left">
+    <p class="text-xs text-red-700">{{.Error}}</p>
+</div>
+{{end}}
+{{end}}

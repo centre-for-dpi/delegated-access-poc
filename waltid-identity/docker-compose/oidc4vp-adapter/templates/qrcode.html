@@ -1,0 +1,52 @@
+{{define "qrcode.html"}}
+<div id="qr-section">
+    <h2 class="text-lg font-bold text-gray-900 mb-2 mt-2">Scan to Present</h2>
+    <p class="text-gray-500 text-xs mb-6">
+        Scan this QR code with the Go Wallet, or click "Open in Go Wallet" to present credentials.
+    </p>
+
+    <div class="flex justify-center my-6">
+        <div id="qr-canvas" class="inline-block p-3 bg-white border border-gray-100 rounded-lg"></div>
+    </div>
+
+    <script>
+        (function() {
+            var qr = qrcode(0, 'M');
+            qr.addData({{.OpenID4VPURL}});
+            qr.make();
+            document.getElementById('qr-canvas').innerHTML = qr.createSvgTag(4, 0);
+        })();
+    </script>
+
+    <div class="flex flex-col sm:flex-row gap-3 justify-center items-center">
+        <a href="{{.WalletURL}}"
+           class="inline-flex items-center text-sm leading-4 font-medium rounded-full
+                  bg-purple-500 hover:bg-purple-700 text-white
+                  px-8 py-2.5 focus:outline-none shadow-sm no-underline">
+            Open in Go Wallet
+        </a>
+        <button onclick="navigator.clipboard.writeText({{.OpenID4VPURL}}); this.textContent='Copied!'; setTimeout(() => this.textContent='Copy URL', 3000)"
+                class="inline-flex items-center text-sm leading-4 font-medium rounded-full
+                       bg-transparent text-purple-500 underline hover:text-purple-700
+                       px-5 py-1.5 focus:outline-none cursor-pointer">
+            Copy URL
+        </button>
+    </div>
+
+    <hr class="mt-8 mb-4 border-gray-100">
+
+    <div id="poll-area">
+        <div hx-get="/poll/{{.SessionID}}"
+             hx-trigger="load delay:2s"
+             hx-target="#poll-area"
+             hx-swap="innerHTML"
+             class="flex items-center justify-center gap-2 text-gray-500 text-sm py-2">
+            <svg class="animate-spin h-4 w-4 text-purple-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+            </svg>
+            Waiting for credential presentation...
+        </div>
+    </div>
+</div>
+{{end}}

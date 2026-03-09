@@ -68,8 +68,9 @@ Schemas are designed dynamically through the Issuer Portal. Fields marked as `di
 | Service | Port | Role |
 |---|---|---|
 | issuer-portal | 7107 | Schema CRUD, dual-format issuance, Ed25519 ldp_vc signing, revocation |
-| go-wallet | 7111 | ldp_vc wallet — OID4VCI client, per-user Ed25519 keys, HTMX UI |
-| verification-portal | 7108 | Dynamic OID4VP verification with same_subject constraints |
+| go-wallet | 7111 | ldp_vc wallet — OID4VCI + OID4VP client, per-user Ed25519 keys, HTMX UI |
+| verification-portal | 7108 | Dynamic OID4VP verification with same_subject constraints (jwt_vc_json) |
+| oidc4vp-adapter | 7112 | OID4VP verifier for ldp_vc — Ed25519 sig validation via inji-verify-service, same_subject |
 | verification-adapter | 7105 | Original hardcoded verification UI (superseded) |
 
 ### MOSIP Inji Verify
@@ -149,6 +150,7 @@ ldp_vc credentials have `credentialStatus` stripped before signing (see above).
 | 7109 | `/*` | inji-verify-ui:8000 |
 | 7110 | `/*` | pixelpass-adapter:7110 |
 | 7111 | `/*` | go-wallet:7111 |
+| 7112 | `/*` | oidc4vp-adapter:7112 |
 
 ---
 
@@ -176,7 +178,17 @@ ldp_vc credentials have `credentialStatus` stripped before signing (see above).
 | main.go | HTTP server, HTMX UI handlers, template rendering |
 | models.go | Per-user data store (credentials, Ed25519 keys, sessions), did:key derivation |
 | oidc.go | OID4VCI client: resolve offer → metadata → token exchange → credential request with proof JWT |
+| presentation.go | OID4VP client: parse openid4vp:// URL, fetch PD, match credentials, build JWT VP, submit |
 | api.go | Walt.id-compatible REST API (login, wallets, credentials) for pixelpass-adapter |
+
+### oidc4vp-adapter/
+
+| File | Purpose |
+|---|---|
+| main.go | HTTP server, routes, config |
+| verifier.go | Schema fetch (ldp_vc only), PD building, VP token validation, did:key resolution, same_subject check |
+| session.go | Session store, credential/result types |
+| handlers.go | HTTP handlers: create session, serve PD, receive VP direct_post, poll results |
 
 ### verification-portal/
 

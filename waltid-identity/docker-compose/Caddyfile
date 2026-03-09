@@ -85,6 +85,11 @@
     reverse_proxy http://go-wallet:{$GO_WALLET_PORT}
 }
 
+# OID4VP Adapter (ldp_vc verifier via OID4VP)
+:{$OIDC4VP_ADAPTER_PORT} {
+    reverse_proxy http://oidc4vp-adapter:{$OIDC4VP_ADAPTER_PORT}
+}
+
 # pgAdmin
 :{$PG_ADMIN_PORT} {
     reverse_proxy http://phpmyadmin:{$PG_ADMIN_PORT}

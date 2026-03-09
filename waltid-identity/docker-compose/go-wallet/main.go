@@ -81,7 +81,7 @@ func initTemplates() {
 	pages := []string{
 		"login.html", "register.html", "home.html", "claim.html",
 		"credential_detail.html", "present.html", "present_qr.html",
-		"present_combined_qr.html",
+		"present_combined_qr.html", "present_oid4vp.html",
 	}
 	partials := []string{
 		"claim_result.html",
@@ -176,6 +176,9 @@ func main() {
 	mux.HandleFunc("GET /present", requireLogin(uiSessions, handlePresent(cfg, store)))
 	mux.HandleFunc("POST /present/combined", requireLogin(uiSessions, handlePresentCombined(cfg, store)))
 	mux.HandleFunc("GET /credentials/{credID}/present", requireLogin(uiSessions, handlePresentQR(cfg, store)))
+	mux.HandleFunc("GET /present/oid4vp", requireLogin(uiSessions, handleOID4VPForm(cfg, store)))
+	mux.HandleFunc("POST /present/oid4vp", requireLogin(uiSessions, handleOID4VPSubmit(cfg, store)))
+	mux.HandleFunc("POST /present/oid4vp/authorize", requireLogin(uiSessions, handleOID4VPAuthorize(cfg, store)))
 
 	// Wallet API routes (pixelpass-adapter compatible — uses API sessions, not UI sessions)
 	mux.HandleFunc("POST /wallet-api/auth/login", handleAPILogin(store, apiSessions))
@@ -582,6 +585,209 @@ func handlePresentCombined(cfg Config, store *DataStore) http.HandlerFunc {
 			"InjiVerifyURL": cfg.InjiVerifyURL,
 			"Email":         email,
 			"Cfg":           cfg,
+		})
+	}
+}
+
+// --- OID4VP Handlers ---
+
+func handleOID4VPForm(cfg Config, store *DataStore) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		email := r.Header.Get("X-User-Email")
+
+		// Check if request_uri was passed as query param (from verifier "Open in Go Wallet" link)
+		requestURI := r.URL.Query().Get("request_uri")
+
+		renderPage(w, "present_oid4vp.html", map[string]any{
+			"Title":      "OID4VP Presentation",
+			"Email":      email,
+			"Cfg":        cfg,
+			"RequestURI": requestURI,
+			"Step":       "input",
+		})
+	}
+}
+
+func handleOID4VPSubmit(cfg Config, store *DataStore) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		email := r.Header.Get("X-User-Email")
+
+		if err := r.ParseForm(); err != nil {
+			http.Error(w, "invalid form", http.StatusBadRequest)
+			return
+		}
+
+		requestURI := r.FormValue("request_uri")
+		if requestURI == "" {
+			renderPage(w, "present_oid4vp.html", map[string]any{
+				"Title": "OID4VP Presentation",
+				"Email": email,
+				"Cfg":   cfg,
+				"Step":  "input",
+				"Error": "Please enter an openid4vp:// URL",
+			})
+			return
+		}
+
+		// Parse the openid4vp:// URL
+		presReq, err := parsePresentationRequest(requestURI)
+		if err != nil {
+			renderPage(w, "present_oid4vp.html", map[string]any{
+				"Title": "OID4VP Presentation",
+				"Email": email,
+				"Cfg":   cfg,
+				"Step":  "input",
+				"Error": "Invalid OID4VP URL: " + err.Error(),
+			})
+			return
+		}
+
+		// Fetch presentation definition
+		if presReq.PresentationDefinitionURI == "" {
+			renderPage(w, "present_oid4vp.html", map[string]any{
+				"Title": "OID4VP Presentation",
+				"Email": email,
+				"Cfg":   cfg,
+				"Step":  "input",
+				"Error": "No presentation_definition_uri in the request",
+			})
+			return
+		}
+
+		pd, err := fetchPresentationDefinition(presReq.PresentationDefinitionURI)
+		if err != nil {
+			renderPage(w, "present_oid4vp.html", map[string]any{
+				"Title": "OID4VP Presentation",
+				"Email": email,
+				"Cfg":   cfg,
+				"Step":  "input",
+				"Error": "Failed to fetch presentation definition: " + err.Error(),
+			})
+			return
+		}
+
+		// Match credentials
+		userCreds := store.ListCredentials(email)
+		matched := matchCredentials(pd, userCreds)
+
+		if len(matched) == 0 {
+			renderPage(w, "present_oid4vp.html", map[string]any{
+				"Title": "OID4VP Presentation",
+				"Email": email,
+				"Cfg":   cfg,
+				"Step":  "input",
+				"Error": "No matching credentials found in your wallet for the requested types",
+			})
+			return
+		}
+
+		// Show confirmation page
+		renderPage(w, "present_oid4vp.html", map[string]any{
+			"Title":      "Authorize Presentation",
+			"Email":      email,
+			"Cfg":        cfg,
+			"Step":       "confirm",
+			"RequestURI": requestURI,
+			"Matched":    matched,
+			"ClientID":   presReq.ClientID,
+			"DescCount":  len(pd.InputDescriptors),
+			"MatchCount": len(matched),
+		})
+	}
+}
+
+func handleOID4VPAuthorize(cfg Config, store *DataStore) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		email := r.Header.Get("X-User-Email")
+
+		if err := r.ParseForm(); err != nil {
+			http.Error(w, "invalid form", http.StatusBadRequest)
+			return
+		}
+
+		requestURI := r.FormValue("request_uri")
+		if requestURI == "" {
+			http.Redirect(w, r, "/present/oid4vp", http.StatusSeeOther)
+			return
+		}
+
+		// Re-parse everything (stateless flow)
+		presReq, err := parsePresentationRequest(requestURI)
+		if err != nil {
+			renderPage(w, "present_oid4vp.html", map[string]any{
+				"Title": "OID4VP Presentation",
+				"Email": email,
+				"Cfg":   cfg,
+				"Step":  "result",
+				"Error": "Invalid OID4VP URL: " + err.Error(),
+			})
+			return
+		}
+
+		pd, err := fetchPresentationDefinition(presReq.PresentationDefinitionURI)
+		if err != nil {
+			renderPage(w, "present_oid4vp.html", map[string]any{
+				"Title": "OID4VP Presentation",
+				"Email": email,
+				"Cfg":   cfg,
+				"Step":  "result",
+				"Error": "Failed to fetch presentation definition: " + err.Error(),
+			})
+			return
+		}
+
+		userCreds := store.ListCredentials(email)
+		matched := matchCredentials(pd, userCreds)
+
+		if len(matched) == 0 {
+			renderPage(w, "present_oid4vp.html", map[string]any{
+				"Title": "OID4VP Presentation",
+				"Email": email,
+				"Cfg":   cfg,
+				"Step":  "result",
+				"Error": "No matching credentials found",
+			})
+			return
+		}
+
+		wk := store.GetWalletKey(email)
+		if wk == nil {
+			renderPage(w, "present_oid4vp.html", map[string]any{
+				"Title": "OID4VP Presentation",
+				"Email": email,
+				"Cfg":   cfg,
+				"Step":  "result",
+				"Error": "No wallet key found",
+			})
+			return
+		}
+
+		// Build VP token
+		vpToken := buildVPToken(wk, matched, presReq.ClientID, presReq.Nonce)
+
+		// Build presentation submission
+		submission := buildPresentationSubmission(pd, matched)
+
+		// Submit to verifier
+		err = submitPresentation(presReq.ResponseURI, vpToken, submission, presReq.State)
+		if err != nil {
+			renderPage(w, "present_oid4vp.html", map[string]any{
+				"Title": "OID4VP Presentation",
+				"Email": email,
+				"Cfg":   cfg,
+				"Step":  "result",
+				"Error": "Failed to submit presentation: " + err.Error(),
+			})
+			return
+		}
+
+		renderPage(w, "present_oid4vp.html", map[string]any{
+			"Title":   "Presentation Submitted",
+			"Email":   email,
+			"Cfg":     cfg,
+			"Step":    "result",
+			"Success": true,
+			"Matched": matched,
 		})
 	}
 }

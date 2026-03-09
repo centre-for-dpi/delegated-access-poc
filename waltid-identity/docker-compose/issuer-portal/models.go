@@ -314,6 +314,7 @@ func (ds *DataStore) ListAllRegisteredSchemas() []map[string]any {
 			"fields":             s.Fields,
 			"fieldCount":         len(s.Fields),
 			"subjectDidStrategy": s.SubjectDIDStrategy,
+			"format":             s.EffectiveFormat(),
 		})
 	}
 	return result

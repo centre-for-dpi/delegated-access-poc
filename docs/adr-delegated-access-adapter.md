@@ -4,8 +4,9 @@
 - **Date:** 2026-06-24
 - **Context:** Delegated access for W3C Verifiable Credentials, deployable into multiple
   Digital Public Goods (Inji and walt.id first; Credebl and others later).
-- **Scope of this record:** architecture decisions only — implementation-agnostic, no code,
-  no dependency on the prior PoC repository.
+- **Scope of this record:** architecture decisions only — self-contained and
+  implementation-agnostic. It can be read, understood, and built from without reference to any
+  prior prototype or codebase.
 
 ---
 
@@ -35,8 +36,8 @@ stacks rather than a vertically-integrated product.
    evaluate PE constraints).
 4. **Cryptographically rigorous delegation** (attenuation, expiry, optional re-delegation) —
    beyond "two DIDs happen to match."
-5. **Single source of truth for the delegation decision** — eliminate the prior split where the
-   linkage check lived in different code per format.
+5. **Single source of truth for the delegation decision** — the linkage check must have one
+   implementation, not a separate code path per credential format.
 
 ---
 
@@ -81,7 +82,7 @@ Split the capability into two independently-deployable services:
 | Adapter | Lives inside | Owns | Never does |
 |---|---|---|---|
 | **Issuance Adapter** | the **Issuer's** trust boundary | constructing the delegation credential + capability, driving the issuer's OID4VCI flow, allocating the issuer's status index | signing credentials itself; holding the root authority |
-| **Presentation Adapter** | the **Verifier's** trust boundary | synthesizing PD constraints, evaluating linkage + capability + status, emitting the verdict + audit receipt | verifying issuer signatures as a new trust anchor; altering the VP |
+| **Presentation Adapter** | the **Verifier's** trust boundary | synthesizing presentation-definition (PD) constraints, evaluating linkage + capability + status, emitting the verdict + audit receipt | verifying issuer signatures as a new trust anchor; altering the VP |
 
 This directly satisfies I1–I3: each adapter is an *extension of* a vertex it already belongs to,
 so the triangle keeps three vertices.
@@ -118,19 +119,21 @@ DID named in the capability, making the invocation check a single identity equal
 
 - The **issuer** publishes a W3C **Bitstring Status List** credential and embeds a
   `BitstringStatusListEntry` in *every* credential, including the delegation credential.
-- **`credentialStatus` must survive signing in both formats** — it is *not* stripped for the
-  JSON-LD/MOSIP path. (The prior gap was caused by stripping it; the fix is to publish the status
-  list as a JSON-LD VC the verifier can resolve, and keep the entry intact.)
+- **`credentialStatus` must survive signing in both formats** — it must *not* be stripped to
+  appease a verifier. A common failure mode: a JSON-LD verifier expects the *status list itself*
+  to be a JSON-LD credential, so an integrator strips `credentialStatus` rather than fixing the
+  list. The correct approach is to publish the status list as a resolvable JSON-LD credential and
+  keep the entry intact.
 - The **presentation adapter** performs the status check **uniformly** for every presented
-  credential, regardless of format. Revocation thus works identically on both paths — the gap is
-  closed by centralizing the *check*, while *hosting* stays with the issuer per the constraint.
+  credential, regardless of format. Revocation thus works identically across formats — the
+  *check* is centralized in one component, while *hosting* stays with the issuer.
 
 ### D5 — Format scope `ldp_vc` + `jwt_vc_json` behind one normalization layer
 
 A thin **claim-normalization layer** parses each supported format into a common internal shape
 (`{ types, subjectId, claims, references, status, proofValidity }`). All linkage, capability, and
 status logic runs **once** against the normalized shape. This eliminates the "two code paths for
-`same_subject`" gap by construction and leaves a seam to add SD-JWT VC / mdoc later.
+`same_subject`" problem by construction and leaves a seam to add SD-JWT VC / mdoc later.
 
 ### D6 — Capability invocation produces a signed consent/audit receipt
 
@@ -143,8 +146,10 @@ Per I4, this receipt attests only to the *evaluation*, never to credential authe
 
 ## 6. The delegation credential profile (normative shape)
 
-Fixing the shape in a published profile (not per-deployment) removes the prior "did_ref path vs
-nested-object" ambiguity. Sketch:
+Fixing the shape in a published profile (rather than leaving it per-deployment) removes any
+ambiguity about *where* the cross-credential link lives — e.g. a flat reference field vs. a value
+nested inside an object — which otherwise differs between integrations and silently breaks the
+linkage check. Sketch:
 
 ```jsonc
 {
@@ -230,7 +235,7 @@ verifier supporting PE `same_subject` (because Inji does not). Two touchpoints:
 |---|---|---|
 | Issuer signature + VP holder binding | ✅ | ✅ |
 | DIF PE `same_subject` evaluation | ✅ native | ❌ signatures only |
-| Bitstring status check (JSON-LD) | partial | ❌ (historically stripped) |
+| Bitstring status check (JSON-LD) | partial | ❌ not enforced |
 
 → The presentation adapter **owns linkage + capability + status for both**, treating walt.id's
 native `same_subject` as defense-in-depth, not a dependency. This keeps one code path (D5) and
@@ -238,30 +243,56 @@ portability.
 
 ---
 
-## 8. How the prior gaps are mitigated
+## 8. Failure modes this architecture prevents
 
-| Prior gap | Mitigation |
+Each row is a way delegated access commonly breaks when built naïvely, and the decision that
+prevents it.
+
+| Failure mode | Prevented by |
 |---|---|
-| Revocation only enforced on the JWT path (`credentialStatus` stripped for JSON-LD) | D4: keep `credentialStatus` intact in both formats; issuer publishes a JSON-LD status list; **adapter checks status uniformly**. |
-| `same_subject` enforced in different code per format | D5: single normalization layer → one linkage/capability/status implementation. |
-| Linkage was data-level only, not cryptographic delegation | D2/D3: ZCAP-LD capability chain with caveats + invocation binding → real attenuable, optionally re-delegatable authority. |
-| No runtime consent / accountability | D6: signed consent/audit receipt per invocation. |
-| `did_ref` path vs nested-shape mismatch (deployment-specific) | §6: a single published **profile** fixes the shape and link paths. |
-| Reissuance was manual | D3 + caveats: `validUntil` = age of majority gives **automatic** expiry-driven transition; reissuance to the subject's own wallet is then an ordinary issuance (issuer-owned). |
+| Revocation enforced inconsistently across formats (e.g. only on the JWT path because `credentialStatus` was stripped for JSON-LD) | D4: keep `credentialStatus` intact in every format; issuer publishes a JSON-LD status list; **the adapter checks status uniformly**. |
+| Cross-credential linkage implemented differently per format → drift and divergent bugs | D5: a single normalization layer → one linkage/capability/status implementation. |
+| Linkage is mere data-matching, with no delegation *semantics* (scope, expiry, attenuation) | D2/D3: a ZCAP-LD capability chain with caveats + invocation binding → real, attenuable, optionally re-delegatable authority. |
+| No runtime consent or accountability trail | D6: a signed consent/audit receipt per invocation. |
+| The cross-credential link path varies per deployment, so verifiers can't reliably find it | §6: a single published **profile** fixes the credential shape and link paths. |
+| Transition of control requires manual reissuance | D3 + caveats: `validUntil` = age of majority gives **automatic** expiry-driven transition; reissuing to the subject's own wallet is then an ordinary issuance (issuer-owned). |
 
 ---
 
-## 9. Standards & their status (be honest about maturity)
+## 9. Standards: ownership & maturity
 
-| Standard | Role | Maturity |
-|---|---|---|
-| **W3C VC Data Model 2.0** | credential & `termsOfUse`/`validUntil`/`credentialStatus`; subject ≠ holder | Recommendation |
-| **W3C Bitstring Status List 1.0** | issuer-hosted revocation | Recommendation |
-| **W3C DID Core** + `did:key` / `did:web` | identifiers & resolution | Recommendation / method specs |
-| **OpenID4VCI / OpenID4VP** | issuance & presentation transport | OpenID Foundation finalized/late-draft |
-| **DIF Presentation Exchange** | `input_descriptors`, `same_subject` (the wire linkage) | DIF spec (not W3C) |
-| **ZCAP-LD (Authorization Capabilities for Linked Data)** | backend capability chain | **W3C CCG report/draft — NOT a Recommendation** |
-| **Kantara Consent Receipt / ISO 27560** | audit/consent receipt shape (optional) | external |
+Three different standards bodies own three different layers, and the interoperability of this
+design depends on keeping them straight. In particular, the cross-credential link (`same_subject`)
+is **not** part of the W3C credential data model and is **not** vendor-specific — it is an open
+**DIF** query-language construct that any compliant verifier can be asked to evaluate.
+
+**Who owns which layer**
+
+| Layer | Standards body | Defines | Delegation construct that lives here |
+|---|---|---|---|
+| Credential data model | **W3C** — VC Data Model 2.0 | the credential itself: `credentialSubject`, `holder`, `proof`, `termsOfUse`, `credentialStatus`; and the *concept* that the holder need not be the subject | the **holder ≠ subject** capability; the delegation credential and its embedded capability |
+| Query / constraint language | **DIF** — Presentation Exchange | `presentation_definition`, `input_descriptors`, `constraints`, and the cross-credential linkers `same_subject` / `is_holder` / `subject_is_issuer` | **`same_subject`** — the on-the-wire linkage |
+| Transport | **OpenID Foundation** — OID4VCI / OID4VP | how issuance & presentation requests/responses move; OID4VP *embeds* the DIF query document | carries the PD (request) and the VP (response) |
+| Backend capability | **W3C CCG** — ZCAP-LD | authorization-capability chains via the `capabilityDelegation` proof purpose | the cryptographic delegation layer, carried inside the credential |
+
+> **Query-language evolution:** newer OID4VP drafts replace DIF Presentation Exchange with **DCQL**
+> (Digital Credentials Query Language), which expresses cross-credential linking via
+> `credential_sets` + claim matching rather than a `same_subject` directive. The normalization
+> layer (D5) is where the adapter absorbs either dialect — it reasons about "linkage" internally
+> and emits whichever query language the host verifier speaks.
+
+**Maturity**
+
+| Standard | Maturity |
+|---|---|
+| W3C VC Data Model 2.0 | Recommendation |
+| W3C Bitstring Status List 1.0 | Recommendation |
+| W3C DID Core + `did:key` / `did:web` | Recommendation / method specs |
+| OpenID4VCI / OpenID4VP | OpenID Foundation (finalized / late-draft) |
+| DIF Presentation Exchange 2.x | DIF specification (not a W3C standard) |
+| DCQL (OID4VP query language) | OpenID Foundation draft |
+| ZCAP-LD (Authorization Capabilities for Linked Data) | **W3C CCG report — NOT a Recommendation** |
+| Kantara Consent Receipt / ISO/IEC 27560 | external (optional) |
 
 ⚠️ **Accepted trade-off:** ZCAP-LD is a CCG draft, not a ratified W3C Recommendation. We accept
 this deliberately — it stays *inside* the adapters (never on the interop wire), so its maturity
@@ -274,7 +305,7 @@ for VC-`termsOfUse`-only semantics without changing the wire format or the trust
 
 **Positive**
 - Trust triangle provably intact (I1–I4 are checkable).
-- Works against verifiers that only do signatures (Inji) and those that do PE (walt.id), unchanged.
+- Works unchanged against verifiers that only validate signatures (e.g. Inji) and those that also evaluate PE constraints (e.g. walt.id).
 - One delegation decision implementation; revocation uniform across formats.
 - Capability rigor (attenuation, expiry, re-delegation) without DPG buy-in to ZCAP-LD.
 - Issuance and presentation deploy, scale, and are secured independently.
